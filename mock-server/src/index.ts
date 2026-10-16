@@ -1,48 +1,32 @@
-import { createServer } from 'node:http';
+import { ConfigError, loadConfig } from './config.js';
+import { createLogger } from './logger.js';
+import { createTelemetryServer } from './server.js';
 
-import { WebSocketServer } from 'ws';
+async function main(): Promise<void> {
+  const config = loadConfig(process.env);
+  const logger = createLogger(config.logLevel);
+  const server = createTelemetryServer({ config, logger });
 
-import type { ServerMessage } from '@shared/protocol.js';
-
-const port = Number(process.env['PORT'] ?? 4000);
-
-if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-  throw new Error('PORT must be an integer between 1 and 65535');
-}
-
-const server = createServer((request, response) => {
-  if (request.method === 'GET' && request.url === '/health') {
-    response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ status: 'ok' }));
-    return;
-  }
-
-  response.writeHead(404, { 'content-type': 'application/json' });
-  response.end(JSON.stringify({ error: 'not found' }));
-});
-
-const socketServer = new WebSocketServer({ server, path: '/ws' });
-
-socketServer.on('connection', (socket) => {
-  socket.on('error', (error) => {
-    process.stderr.write(
-      `${JSON.stringify({ level: 'error', message: 'websocket error', error: error.message })}\n`,
+  function shutdown(signal: string): void {
+    logger.info('shutting down', { signal });
+    server.stop().then(
+      () => process.exit(0),
+      (error: unknown) => {
+        logger.error('shutdown failed', { error: String(error) });
+        process.exit(1);
+      },
     );
-  });
-  const snapshot: ServerMessage = { type: 'snapshot', seq: 0, nodes: [] };
-  socket.send(JSON.stringify(snapshot));
-});
-
-function shutdown(): void {
-  for (const socket of socketServer.clients) {
-    socket.terminate();
   }
 
-  socketServer.close();
-  server.close();
+  process.once('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+
+  await server.start();
 }
 
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
-
-server.listen(port, '0.0.0.0');
+main().catch((error: unknown) => {
+  const logger = createLogger('error');
+  const message = error instanceof ConfigError ? 'invalid configuration' : 'startup failed';
+  logger.error(message, { error: error instanceof Error ? error.message : String(error) });
+  process.exit(1);
+});

@@ -13,6 +13,7 @@ services:
       SEED: '${SEED:-42}'
       FORCE_CRITICAL: '${FORCE_CRITICAL:-3}'
       DROPOUT_RATIO: '${DROPOUT_RATIO:-0.01}'
+      LOG_LEVEL: '${LOG_LEVEL:-info}'
     healthcheck:
       test:
         - CMD

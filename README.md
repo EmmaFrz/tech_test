@@ -20,12 +20,34 @@ Legacy Compose on Docker Engine 29+ also needs `COMPOSE_API_VERSION=1.44` in the
 The modern `docker compose` command negotiates the API version automatically.
 
 Open <http://localhost:3000>. The `web` service serves the application through nginx; `mock-server`
-provides `GET /health` on port 4000 and accepts `/ws` connections with an empty snapshot. The telemetry
-simulation is not implemented yet.
+provides `GET /health` on port 4000 and streams simulated telemetry over `/ws`: a `snapshot` on
+connect, a `delta` every tick and a `heartbeat` every 2 seconds.
 
 ```sh
 docker compose down
 ```
+
+## Telemetry simulator configuration
+
+The simulator reads these variables, inline or from a `.env` file next to `docker-compose.yml`.
+Invalid values stop the server at startup with a descriptive error.
+
+| Variable         | Default | Description                                                          |
+| ---------------- | ------- | -------------------------------------------------------------------- |
+| `NODE_COUNT`     | `200`   | Number of simulated nodes                                            |
+| `TICK_MS`        | `100`   | Milliseconds between delta messages                                  |
+| `UPDATE_RATIO`   | `0.3`   | Fraction of nodes that report in each tick                           |
+| `SEED`           | `42`    | Seed of the deterministic generator (mulberry32)                     |
+| `FORCE_CRITICAL` | `3`     | Nodes pinned to `CRITICAL`, so demos and tests always have some      |
+| `DROPOUT_RATIO`  | `0.01`  | Chance per tick that one node goes silent for 12 to 24 seconds       |
+| `LOG_LEVEL`      | `info`  | `debug`, `info`, `warn` or `error`; logs are one JSON line per event |
+
+```sh
+NODE_COUNT=5000 docker compose up --build
+```
+
+Status is derived on the server: `CRITICAL` when CPU ≥ 90 %, memory ≥ 92 % or latency ≥ 800 ms;
+`WARNING` when CPU ≥ 75 %, memory ≥ 80 % or latency ≥ 300 ms; otherwise `OK`.
 
 ## Development
 

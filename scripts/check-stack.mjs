@@ -18,38 +18,41 @@ socketUrl.protocol = socketUrl.protocol === 'https:' ? 'wss:' : 'ws:';
 const socket = new WebSocket(socketUrl);
 
 await new Promise((resolve, reject) => {
+  const received = [];
   const timeout = setTimeout(() => {
     socket.close();
-    reject(new Error('WebSocket snapshot timed out'));
+    reject(new Error('Expected a snapshot followed by a delta within 5 seconds'));
   }, 5_000);
 
-  socket.addEventListener(
-    'error',
-    () => {
-      clearTimeout(timeout);
-      reject(new Error('WebSocket connection failed'));
-    },
-    { once: true },
-  );
+  function finish(error) {
+    clearTimeout(timeout);
+    socket.close();
+    if (error === undefined) {
+      resolve();
+    } else {
+      reject(error);
+    }
+  }
 
-  socket.addEventListener(
-    'message',
-    (event) => {
-      clearTimeout(timeout);
-      try {
-        const message = JSON.parse(event.data);
-        assert.equal(message.type, 'snapshot');
-        assert.ok(Number.isSafeInteger(message.seq));
-        assert.ok(Array.isArray(message.nodes));
-        resolve();
-      } catch (error) {
-        reject(error);
-      } finally {
-        socket.close();
+  socket.addEventListener('error', () => finish(new Error('WebSocket connection failed')), {
+    once: true,
+  });
+
+  socket.addEventListener('message', (event) => {
+    try {
+      received.push(JSON.parse(event.data));
+      const [snapshot, ...rest] = received;
+      assert.equal(snapshot.type, 'snapshot');
+      assert.ok(Number.isSafeInteger(snapshot.seq));
+      assert.ok(snapshot.nodes.length > 0, 'the snapshot must contain nodes');
+      if (rest.some((message) => message.type === 'delta')) {
+        assert.ok(rest.every((message) => message.seq > snapshot.seq));
+        finish();
       }
-    },
-    { once: true },
-  );
+    } catch (error) {
+      finish(error);
+    }
+  });
 });
 
-process.stdout.write('Application routes, server health and WebSocket proxy passed.\n');
+process.stdout.write('Application routes, server health and telemetry stream passed.\n');
