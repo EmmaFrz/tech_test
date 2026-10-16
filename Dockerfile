@@ -1,7 +1,8 @@
 FROM node:22.23.3-alpine3.23 AS deps
 WORKDIR /app
 RUN chown node:node /app
-ENV CYPRESS_INSTALL_BINARY=0
+ENV CYPRESS_INSTALL_BINARY=0 \
+    NEXT_TELEMETRY_DISABLED=1
 COPY --chown=node:node package.json package-lock.json ./
 COPY --chown=node:node mock-server/package.json ./mock-server/package.json
 USER node
@@ -20,10 +21,15 @@ CMD ["npm", "run", "test:ci"]
 FROM test AS build
 RUN npm run test:ci && npm run build
 
-FROM nginx:1.30.6-alpine3.24 AS runtime
-COPY nginx/nginx.conf /etc/nginx/nginx.conf
-COPY nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY --from=build --chown=nginx:nginx /app/dist /usr/share/nginx/html
-USER nginx
-EXPOSE 3000
-CMD ["nginx", "-g", "daemon off;"]
+FROM node:22.23.3-alpine3.23 AS runtime
+WORKDIR /app
+RUN chown node:node /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0 \
+    PORT=3001
+COPY --from=build --chown=node:node /app/.next/standalone ./
+COPY --from=build --chown=node:node /app/.next/static ./.next/static
+USER node
+EXPOSE 3001
+CMD ["node", "server.js"]

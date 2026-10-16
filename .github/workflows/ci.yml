@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Temporary: the migration branch is verified here; remove it before merging into main.
+    branches: [main, feat/nextjs-migration]
   pull_request:
 
 permissions:
@@ -21,6 +22,7 @@ jobs:
       COMPOSE_API_VERSION: '1.44'
       COMPOSE_DOCKER_CLI_BUILD: '1'
       DOCKER_BUILDKIT: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -57,6 +59,7 @@ jobs:
         run: |
           node scripts/check-stack.mjs
           test "$($COMPOSE_COMMAND exec -T web id -u)" != 0
+          test "$($COMPOSE_COMMAND exec -T app id -u)" != 0
           test "$($COMPOSE_COMMAND exec -T mock-server id -u)" != 0
       - name: Run unit tests in Docker
         run: $COMPOSE_COMMAND --profile test run --rm unit
