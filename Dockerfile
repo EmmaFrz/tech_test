@@ -15,10 +15,10 @@ CMD ["npm", "run", "dev"]
 
 FROM dev AS test
 RUN npm run format:check && npm run lint && npm run typecheck
-CMD ["npm", "run", "test:ci"]
+CMD ["npm", "run", "test:coverage"]
 
 FROM test AS build
-RUN npm run test:ci && npm run build
+RUN npm run test:coverage && npm run build
 
 FROM nginx:1.30.6-alpine3.24 AS runtime
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
