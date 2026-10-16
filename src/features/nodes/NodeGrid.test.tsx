@@ -194,6 +194,97 @@ describe('NodeGrid during live updates', () => {
     vi.useRealTimers();
   });
 
+  describe('keyboard focus', () => {
+    it('stays in the grid when a reorder moves the focused row out of the window', () => {
+      seedFleet(makeNodes(200));
+      act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+      render(<NodeGrid />);
+      const first = button('node-0001');
+      act(() => first.focus());
+
+      applyUpdates(makeNode({ latencyMs: 1, timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(first).not.toBeInTheDocument();
+      expect(screen.getByRole('grid')).toHaveFocus();
+      fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
+      expect(button('node-0002')).toHaveFocus();
+    });
+
+    it('keeps focus on a row that a reorder moves within the window', () => {
+      seedFleet(makeNodes(5));
+      act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+      render(<NodeGrid />);
+      act(() => button('node-0001').focus());
+
+      applyUpdates(makeNode({ latencyMs: 1, timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(screen.getAllByTestId('node-row').at(-1)).toHaveAttribute('data-node-id', 'node-0001');
+      expect(button('node-0001')).toHaveFocus();
+    });
+
+    it('stays in the grid when the focused node leaves the status filter', () => {
+      seedFleet(['a', 'b', 'c'].map((nodeId) => makeNode({ nodeId, status: 'CRITICAL' })));
+      act(() => useUiStore.getState().actions.setStatusFilter('CRITICAL'));
+      render(<NodeGrid />);
+      act(() => button('b').focus());
+
+      applyUpdates(makeNode({ nodeId: 'b', status: 'OK', timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(screen.queryByRole('button', { name: 'b' })).not.toBeInTheDocument();
+      expect(screen.getByRole('grid')).toHaveFocus();
+      fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowUp' });
+      expect(button('a')).toHaveFocus();
+    });
+
+    it('stays in the grid when a replacement snapshot drops the focused node', () => {
+      seedFleet(makeNodes(3));
+      render(<NodeGrid />);
+      act(() => button('node-0002').focus());
+
+      seedFleet([makeNode({ nodeId: 'node-0001' }), makeNode({ nodeId: 'node-0003' })]);
+
+      expect(screen.getByRole('grid')).toHaveFocus();
+      fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
+      expect(button('node-0003')).toHaveFocus();
+    });
+
+    it('leaves focus alone when the user is outside the grid', async () => {
+      seedFleet(makeNodes(200));
+      act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+      render(
+        <>
+          <input aria-label="Search" />
+          <NodeGrid />
+        </>,
+      );
+      act(() => button('node-0001').focus());
+      act(() => screen.getByRole('textbox', { name: 'Search' }).focus());
+      await Promise.resolve();
+
+      applyUpdates(makeNode({ latencyMs: 1, timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(screen.getByRole('textbox', { name: 'Search' })).toHaveFocus();
+    });
+
+    it('does not pull focus back after the user blurred the grid', async () => {
+      seedFleet(makeNodes(200));
+      act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+      render(<NodeGrid />);
+      act(() => button('node-0001').focus());
+      act(() => button('node-0001').blur());
+      await Promise.resolve();
+
+      applyUpdates(makeNode({ latencyMs: 1, timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(document.body).toHaveFocus();
+    });
+  });
+
   describe('critical pulse', () => {
     function rowOf(nodeId: string): HTMLElement | null {
       return button(nodeId).closest('[role="row"]');

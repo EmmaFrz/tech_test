@@ -34,6 +34,36 @@ export function resolveNavigationTarget(
   }
 }
 
+/**
+ * Navigation from the gap a removed row left at `gapIndex`, once the grid itself holds focus: the
+ * row that moved into its place is the next one down, the row above it the next one up.
+ */
+export function resolveTargetFromGap(
+  key: string,
+  gapIndex: number,
+  rowCount: number,
+): number | null {
+  if (rowCount === 0) {
+    return null;
+  }
+
+  const lastIndex = rowCount - 1;
+  const clamp = (index: number): number => Math.min(Math.max(index, 0), lastIndex);
+
+  switch (key) {
+    case 'ArrowDown':
+      return clamp(gapIndex);
+    case 'ArrowUp':
+      return clamp(gapIndex - 1);
+    case 'PageDown':
+      return clamp(gapIndex + PAGE_SIZE - 1);
+    case 'PageUp':
+      return clamp(gapIndex - PAGE_SIZE);
+    default:
+      return resolveNavigationTarget(key, gapIndex, rowCount);
+  }
+}
+
 export function nodeButtonId(nodeId: string): string {
   return `node-button-${nodeId}`;
 }

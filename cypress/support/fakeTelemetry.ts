@@ -1,0 +1,109 @@
+import type { NodeStatus, NodeTelemetry, ServerMessage } from '@shared/protocol';
+
+import { SELECTORS } from './selectors';
+
+const SERVER_TIME = 1_700_000_000_000;
+const HEARTBEAT_MS = 2_000;
+
+interface FakeSocket {
+  readonly emit: (message: ServerMessage) => void;
+}
+
+let latestSocket: FakeSocket | null = null;
+let lastSeq = 0;
+
+function nextSeq(): number {
+  lastSeq += 1;
+  return lastSeq;
+}
+
+function track(socket: FakeSocket): void {
+  latestSocket = socket;
+}
+
+/** The node at 1-based `position` of `makeFleet`: `node-0001` has the highest latency. */
+export function fleetNode(position: number, changes: Partial<NodeTelemetry> = {}): NodeTelemetry {
+  return {
+    nodeId: `node-${String(position).padStart(4, '0')}`,
+    status: 'OK',
+    cpuLoad: 40,
+    memoryUsage: 50,
+    latencyMs: 1_000 - position,
+    timestamp: SERVER_TIME,
+    ...changes,
+  };
+}
+
+/** Fleet in descending latency order, so a latency sort keeps the IDs in order. */
+export function makeFleet(count: number, status: NodeStatus = 'OK'): NodeTelemetry[] {
+  return Array.from({ length: count }, (_, index) => fleetNode(index + 1, { status }));
+}
+
+/** A newer sample of the node at `position`, which the client applies as an update. */
+export function laterSample(position: number, changes: Partial<NodeTelemetry>): NodeTelemetry {
+  return fleetNode(position, { timestamp: SERVER_TIME + 1_000, ...changes });
+}
+
+/**
+ * Loads the dashboard with a deterministic telemetry source in place of the WebSocket: it sends
+ * `nodes` as the snapshot, then only heartbeats until a test emits more.
+ */
+export function visitWithTelemetry(nodes: readonly NodeTelemetry[]): void {
+  cy.visit('/', {
+    onBeforeLoad(win) {
+      class FakeTelemetrySocket extends win.EventTarget {
+        private readonly heartbeat: number;
+
+        constructor() {
+          super();
+          track(this);
+          win.setTimeout(() => {
+            this.dispatchEvent(new win.Event('open'));
+            this.emit({ type: 'snapshot', seq: nextSeq(), nodes });
+          }, 0);
+          this.heartbeat = win.setInterval(
+            () => this.emit({ type: 'heartbeat', seq: nextSeq(), serverTime: SERVER_TIME }),
+            HEARTBEAT_MS,
+          );
+        }
+
+        emit(message: ServerMessage): void {
+          this.dispatchEvent(new win.MessageEvent('message', { data: JSON.stringify(message) }));
+        }
+
+        close(): void {
+          win.clearInterval(this.heartbeat);
+        }
+      }
+
+      Object.defineProperty(win, 'WebSocket', { configurable: true, value: FakeTelemetrySocket });
+    },
+  });
+  cy.get(SELECTORS.nodeRow).should('have.length.greaterThan', 0);
+}
+
+export function emitDelta(...updates: readonly NodeTelemetry[]): void {
+  cy.then(() => latestSocket?.emit({ type: 'delta', seq: nextSeq(), updates }));
+}
+
+export function emitSnapshot(nodes: readonly NodeTelemetry[]): void {
+  cy.then(() => latestSocket?.emit({ type: 'snapshot', seq: nextSeq(), nodes }));
+}
+
+// Chromium's DevTools protocol, for native input and media emulation that Cypress commands lack.
+async function sendDevToolsCommand(command: string, params: object): Promise<void> {
+  await Cypress.automation('remote:debugger:protocol', { command, params });
+}
+
+/** Emulates `prefers-reduced-motion: reduce` until `resetReducedMotion` runs. */
+export function emulateReducedMotion(): void {
+  cy.then(() =>
+    sendDevToolsCommand('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+    }),
+  );
+}
+
+export function resetReducedMotion(): void {
+  cy.then(() => sendDevToolsCommand('Emulation.setEmulatedMedia', { features: [] }));
+}

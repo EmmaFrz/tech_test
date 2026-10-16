@@ -12,6 +12,12 @@
   outline: none;
 }
 
+/* The grid holds focus itself only after live data removed the focused row. */
+.grid:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus);
+  outline-offset: var(--focus-ring-offset);
+}
+
 .scroller {
   position: relative;
   flex: 1;
