@@ -8,11 +8,16 @@ management and dashboard features are the next implementation steps.
 
 Requires Docker with Compose v2 or Compose v1.28+.
 
+On Windows, Docker Desktop needs a working WSL 2 backend and hardware virtualization enabled.
+
 ```sh
 docker compose up --build
 # Compose v1:
 docker-compose up --build
 ```
+
+Legacy Compose on Docker Engine 29+ also needs `COMPOSE_API_VERSION=1.44` in the shell environment.
+The modern `docker compose` command negotiates the API version automatically.
 
 Open <http://localhost:3000>. The `web` service serves the application through nginx; `mock-server`
 provides `GET /health` on port 4000 and accepts `/ws` connections with an empty snapshot. The telemetry
