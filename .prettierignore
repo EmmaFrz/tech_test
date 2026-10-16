@@ -1,0 +1,12 @@
+agents/
+.agents/
+.codex/
+.claude/
+.cursor/
+.local/
+node_modules/
+dist/
+coverage/
+cypress/videos/
+cypress/screenshots/
+package-lock.json

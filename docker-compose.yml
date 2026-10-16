@@ -1,0 +1,76 @@
+services:
+  mock-server:
+    build:
+      context: .
+      dockerfile: mock-server/Dockerfile
+    ports:
+      - '127.0.0.1:4000:4000'
+    environment:
+      PORT: '4000'
+      NODE_COUNT: '${NODE_COUNT:-200}'
+      TICK_MS: '${TICK_MS:-100}'
+      UPDATE_RATIO: '${UPDATE_RATIO:-0.3}'
+      SEED: '${SEED:-42}'
+      FORCE_CRITICAL: '${FORCE_CRITICAL:-3}'
+      DROPOUT_RATIO: '${DROPOUT_RATIO:-0.01}'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  web:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      mock-server:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--spider', 'http://127.0.0.1:3000/']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  web-dev:
+    profiles: ['dev']
+    build:
+      context: .
+      target: dev
+    ports:
+      - '127.0.0.1:5173:5173'
+    environment:
+      WS_PROXY_TARGET: http://mock-server:4000
+    volumes:
+      - ./src:/app/src
+      - ./shared:/app/shared
+      - ./index.html:/app/index.html
+      - ./vite.config.ts:/app/vite.config.ts
+    depends_on:
+      mock-server:
+        condition: service_healthy
+
+  unit:
+    profiles: ['test']
+    build:
+      context: .
+      target: test
+
+  e2e:
+    profiles: ['e2e']
+    build:
+      context: .
+      dockerfile: cypress/Dockerfile
+    environment:
+      CYPRESS_baseUrl: http://web:3000
+    depends_on:
+      web:
+        condition: service_healthy

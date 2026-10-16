@@ -1,0 +1,59 @@
+.shell {
+  max-width: var(--content-width);
+  margin-inline: auto;
+  padding: var(--space-6);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-block: var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.wordmark {
+  font-weight: 700;
+}
+
+.caption {
+  color: var(--color-muted);
+  font-size: var(--font-small);
+}
+
+.placeholder {
+  display: grid;
+  gap: var(--space-6);
+  margin-block: var(--space-12);
+  padding: var(--space-8);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-panel);
+}
+
+.eyebrow {
+  color: var(--color-accent);
+  font-size: var(--font-small);
+  font-weight: 600;
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+}
+
+.placeholder h1 {
+  max-width: var(--text-width);
+  font-size: var(--font-title);
+  line-height: var(--line-height-title);
+}
+
+.description {
+  max-width: var(--text-width);
+  color: var(--color-muted);
+}
+
+.status {
+  padding-top: var(--space-6);
+  border-top: var(--border-width) solid var(--color-border);
+  font-size: var(--font-small);
+}
