@@ -1,9 +1,11 @@
 FROM node:22.23.3-alpine3.23 AS deps
 WORKDIR /app
+RUN chown node:node /app
 ENV CYPRESS_INSTALL_BINARY=0
-COPY package.json package-lock.json ./
-COPY mock-server/package.json ./mock-server/package.json
-RUN npm ci && chown node:node /app
+COPY --chown=node:node package.json package-lock.json ./
+COPY --chown=node:node mock-server/package.json ./mock-server/package.json
+USER node
+RUN npm ci
 
 FROM deps AS dev
 COPY --chown=node:node . .

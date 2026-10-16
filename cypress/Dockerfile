@@ -5,8 +5,9 @@ RUN mkdir -p /home/node/.cache \
     && chown -R node:node /home/node/.cache /app
 ENV CYPRESS_CACHE_FOLDER=/home/node/.cache/Cypress
 ENV CYPRESS_INSTALL_BINARY=0
-COPY package.json package-lock.json ./
-COPY mock-server/package.json ./mock-server/package.json
+COPY --chown=node:node package.json package-lock.json ./
+COPY --chown=node:node mock-server/package.json ./mock-server/package.json
+USER node
 RUN npm ci
 COPY --chown=node:node . .
 USER node
