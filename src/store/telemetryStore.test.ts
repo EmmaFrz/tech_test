@@ -4,6 +4,7 @@ import type { TelemetryStore } from './telemetryStore';
 
 import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
 
+import { selectFleetMetrics, selectStatusCounts } from './selectors';
 import { createTelemetryStore } from './telemetryStore';
 
 function batch(updates: ReturnType<typeof makeNodes>, serverTime: number | null = null) {
@@ -157,5 +158,64 @@ describe('telemetryStore', () => {
     store.getState().actions.setConnection('reconnecting');
 
     expect(store.getState().connection).toBe('reconnecting');
+  });
+
+  describe('node IDs that are also Object.prototype keys', () => {
+    it('keeps a __proto__ node that first appears in a delta as an ordinary entry', () => {
+      const { actions } = store.getState();
+      actions.applySnapshot([makeNode()], 1);
+
+      actions.applyBatch(batch([makeNode({ nodeId: '__proto__', status: 'CRITICAL' })]));
+
+      const state = store.getState();
+      expect(Object.keys(state.byId)).toEqual(['node-0001', '__proto__']);
+      expect(selectFleetMetrics(state).criticalCount).toBe(1);
+      expect(selectStatusCounts(state).ALL).toBe(2);
+      expect(state.byId['status']).toBeUndefined();
+      expect(Object.getPrototypeOf(state.byId)).toBeNull();
+    });
+
+    it('updates a __proto__ node that was in the first snapshot', () => {
+      const { actions } = store.getState();
+      actions.applySnapshot([makeNode({ nodeId: '__proto__' })], 1);
+
+      actions.applyBatch(batch([makeNode({ nodeId: '__proto__', status: 'CRITICAL' })]));
+
+      expect(Object.keys(store.getState().byId)).toEqual(['__proto__']);
+      expect(selectFleetMetrics(store.getState()).criticalCount).toBe(1);
+    });
+
+    it('reports nothing for such IDs once a snapshot no longer lists them', () => {
+      const { actions } = store.getState();
+      actions.applySnapshot(
+        ['toString', 'constructor', '__proto__'].map((nodeId) => makeNode({ nodeId })),
+        1,
+      );
+      expect(store.getState().byId['toString']?.nodeId).toBe('toString');
+
+      actions.applySnapshot([makeNode()], 2);
+
+      const { byId } = store.getState();
+      expect('toString' in byId).toBe(false);
+      expect('constructor' in byId).toBe(false);
+      expect('__proto__' in byId).toBe(false);
+    });
+
+    it('never gives the node map a prototype, whatever the update path', () => {
+      const { actions } = store.getState();
+      expect(Object.getPrototypeOf(store.getState().byId)).toBeNull();
+
+      actions.applySnapshot(makeNodes(2), 1);
+      expect(Object.getPrototypeOf(store.getState().byId)).toBeNull();
+
+      actions.applyBatch(batch([makeNode({ latencyMs: 300 })]));
+      expect(Object.getPrototypeOf(store.getState().byId)).toBeNull();
+
+      actions.pause();
+      actions.applyBatch(batch([makeNode({ nodeId: 'node-0002', latencyMs: 400 })]));
+      actions.resume();
+      expect(Object.getPrototypeOf(store.getState().byId)).toBeNull();
+      expect(store.getState().byId['node-0002']?.latencyMs).toBe(400);
+    });
   });
 });

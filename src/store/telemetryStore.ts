@@ -6,6 +6,7 @@ import type { StoreApi, UseBoundStore } from 'zustand';
 
 import type { ConnectionState } from '@/domain/connection';
 import type { IngestBatch } from '@/domain/ingest';
+import { createDictionary } from '@/lib/dictionary';
 import { IS_DEVELOPMENT } from '@/lib/env';
 import type { NodeTelemetry } from '@shared/protocol';
 
@@ -20,6 +21,7 @@ export interface TelemetryActions {
 }
 
 export interface TelemetryState {
+  /** Prototype-free, so every node ID the protocol accepts is an ordinary key. */
   readonly byId: Readonly<Record<string, NodeTelemetry>>;
   /** Increments whenever a snapshot replaces the node set. */
   readonly epoch: number;
@@ -42,6 +44,14 @@ function latestOf(current: number | null, candidates: readonly (number | null)[]
   return latest;
 }
 
+function indexNodes(nodes: readonly NodeTelemetry[]): TelemetryState['byId'] {
+  const byId = createDictionary<NodeTelemetry>();
+  for (const node of nodes) {
+    byId[node.nodeId] = node;
+  }
+  return byId;
+}
+
 function mergeUpdates(
   byId: TelemetryState['byId'],
   updates: readonly NodeTelemetry[],
@@ -51,7 +61,7 @@ function mergeUpdates(
   }
 
   // Only the updated entries get new references, so rows of untouched nodes do not re-render.
-  const next: Record<string, NodeTelemetry> = { ...byId };
+  const next = createDictionary(byId);
   for (const update of updates) {
     next[update.nodeId] = update;
   }
@@ -82,7 +92,7 @@ export function createTelemetryStore(
         }
 
         return {
-          byId: {},
+          byId: createDictionary<NodeTelemetry>(),
           epoch: 0,
           connection: 'offline',
           lastMessageAt: null,
@@ -94,7 +104,7 @@ export function createTelemetryStore(
               bufferedServerTime = null;
               set(
                 {
-                  byId: Object.fromEntries(nodes.map((node) => [node.nodeId, node])),
+                  byId: indexNodes(nodes),
                   serverTime: latestOf(
                     null,
                     nodes.map((node) => node.timestamp),
