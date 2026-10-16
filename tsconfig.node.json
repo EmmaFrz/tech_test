@@ -8,5 +8,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["next.config.ts", "vitest.config.ts", "cypress.config.ts"]
+  "include": ["next.config.ts", "next.config.test.ts", "vitest.config.ts", "cypress.config.ts"]
 }
