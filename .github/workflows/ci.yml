@@ -2,8 +2,7 @@ name: CI
 
 on:
   push:
-    # Temporary: the migration branch is verified here; remove it before merging into main.
-    branches: [main, feat/nextjs-migration]
+    branches: [main]
   pull_request:
 
 permissions:
