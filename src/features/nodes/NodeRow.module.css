@@ -1,0 +1,123 @@
+.row {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: var(--grid-columns);
+  gap: var(--space-3);
+  align-items: center;
+  height: var(--size-row);
+  padding-inline: var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+  transform: translateY(var(--row-offset));
+}
+
+.row:hover {
+  background: var(--color-surface-hover);
+}
+
+.row[aria-selected='true'] {
+  background: var(--color-surface-raised);
+  outline: var(--border-width) solid var(--color-accent);
+  outline-offset: calc(-1 * var(--border-width));
+}
+
+.row[data-status='WARNING'] {
+  box-shadow: inset var(--border-width-accent) 0 0 var(--color-warning);
+}
+
+.row[data-status='CRITICAL'] {
+  background: var(--color-critical-surface);
+  box-shadow: inset var(--border-width-accent) 0 0 var(--color-critical);
+}
+
+.row[data-stale='true'] {
+  color: var(--color-stale);
+}
+
+.row[data-stale='true'] .meterCell {
+  opacity: 0.55;
+}
+
+.pulse {
+  animation: criticalPulse var(--duration-pulse) var(--easing-standard);
+}
+
+@keyframes criticalPulse {
+  from {
+    background: var(--color-critical-border);
+  }
+
+  to {
+    background: var(--color-critical-surface);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}
+
+.idCell {
+  min-width: 0;
+}
+
+.select {
+  position: static;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Stretches the button over the whole row so any click selects it. */
+.select::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+}
+
+.select:focus-visible {
+  outline: none;
+}
+
+.select:focus-visible::after {
+  outline: var(--focus-ring-width) solid var(--color-focus);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.statusCell {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.staleTag {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-label);
+}
+
+.meterCell {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.value {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.time {
+  color: var(--color-muted);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+}

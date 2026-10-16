@@ -1,0 +1,108 @@
+.chart {
+  margin: 0;
+}
+
+.title {
+  margin-bottom: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+}
+
+.placeholder {
+  display: grid;
+  height: var(--size-chart-height);
+  margin: 0;
+  place-items: center;
+  border: var(--border-width) dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.plot {
+  position: relative;
+  padding-left: var(--space-12);
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: var(--size-chart-height);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+}
+
+.gridLine {
+  stroke: var(--color-border);
+  stroke-width: var(--border-width);
+  vector-effect: non-scaling-stroke;
+}
+
+.line {
+  fill: none;
+  stroke-width: var(--focus-ring-width);
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.cpu {
+  stroke: var(--color-chart-cpu);
+  background: var(--color-chart-cpu);
+}
+
+.memory {
+  stroke: var(--color-chart-memory);
+  background: var(--color-chart-memory);
+  stroke-dasharray: var(--chart-dash-pattern);
+}
+
+.latency {
+  stroke: var(--color-chart-latency);
+  background: var(--color-chart-latency);
+}
+
+.axisMax,
+.axisMin {
+  position: absolute;
+  left: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+}
+
+.axisMax {
+  top: 0;
+}
+
+.axisMin {
+  bottom: 0;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+
+.legendItem {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.swatch {
+  width: var(--space-4);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+}
+
+.latest {
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}

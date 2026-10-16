@@ -1,1 +1,1 @@
-export {};
+export { NodeDetailPanel } from './NodeDetailPanel';

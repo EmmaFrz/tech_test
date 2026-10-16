@@ -16,3 +16,9 @@ h1,
 p {
   margin: 0;
 }
+
+button,
+input,
+select {
+  font-family: inherit;
+}

@@ -43,6 +43,15 @@ export function useStatusCounts(): StatusCounts {
   return useTelemetryStore(useShallow(selectStatusCounts));
 }
 
+/** True once a snapshot has arrived, i.e. the fleet is known. */
+export function useHasNodes(): boolean {
+  return useTelemetryStore((state) => state.epoch > 0);
+}
+
+export function useCriticalCount(): number {
+  return useTelemetryStore((state) => selectFleetMetrics(state).criticalCount);
+}
+
 export function useConnectionState(): ConnectionState {
   return useTelemetryStore((state) => state.connection);
 }

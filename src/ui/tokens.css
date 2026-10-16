@@ -27,6 +27,12 @@
   --color-critical-border: rgb(255 107 107 / 55%);
   --color-stale: #7f93a3;
 
+  /* Chart series; each also differs by line style and has a text legend */
+  --color-chart-cpu: #6fd8c4;
+  --color-chart-memory: #8ab4ff;
+  --color-chart-latency: #f2b84b;
+  --chart-dash-pattern: 6 4;
+
   /* Spacing on a 4px scale */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -76,6 +82,8 @@
   --size-search-width: 16rem;
   --content-width: 90rem;
   --detail-width: 26rem;
+  --size-chart-height: 7.5rem;
+  --grid-columns: minmax(7rem, 1.2fr) 8.5rem minmax(9rem, 1fr) minmax(9rem, 1fr) 5.5rem 7.5rem;
   --text-width: 36rem;
 
   /* Motion; collapsed to near-zero when the user prefers reduced motion */

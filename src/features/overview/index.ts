@@ -1,1 +1,1 @@
-export {};
+export { MetricsOverview } from './MetricsOverview';

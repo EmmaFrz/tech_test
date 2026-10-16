@@ -1,6 +1,8 @@
 export {
   useConnectionState,
+  useCriticalCount,
   useFleetMetrics,
+  useHasNodes,
   useIsNodeStale,
   useIsNodeVisible,
   useIsPaused,

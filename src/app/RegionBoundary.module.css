@@ -1,0 +1,15 @@
+.fallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-critical-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-critical-surface);
+}
+
+.message {
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+}
