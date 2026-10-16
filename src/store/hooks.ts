@@ -35,6 +35,11 @@ export function useIsNodeStale(nodeId: string): boolean {
   });
 }
 
+/** Browser time the node entered CRITICAL while that entry is recent enough to pulse. */
+export function useCriticalSince(nodeId: string): number | undefined {
+  return useTelemetryStore((state) => state.criticalSince[nodeId]);
+}
+
 export function useFleetMetrics(): FleetMetrics {
   return useTelemetryStore(useShallow(selectFleetMetrics));
 }

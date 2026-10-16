@@ -5,6 +5,8 @@ import type { HistoryStore } from './historyStore';
 import type { StoreApi, UseBoundStore } from 'zustand';
 
 import type { ConnectionState } from '@/domain/connection';
+import type { CriticalEntries } from '@/domain/criticalEntries';
+import { trackCriticalEntries } from '@/domain/criticalEntries';
 import type { IngestBatch } from '@/domain/ingest';
 import { createDictionary } from '@/lib/dictionary';
 import { IS_DEVELOPMENT } from '@/lib/env';
@@ -23,6 +25,8 @@ export interface TelemetryActions {
 export interface TelemetryState {
   /** Prototype-free, so every node ID the protocol accepts is an ordinary key. */
   readonly byId: Readonly<Record<string, NodeTelemetry>>;
+  /** Browser time each shown node entered CRITICAL, kept while its pulse may still play. */
+  readonly criticalSince: CriticalEntries;
   /** Increments whenever a snapshot replaces the node set. */
   readonly epoch: number;
   readonly connection: ConnectionState;
@@ -80,10 +84,17 @@ export function createTelemetryStore(
         const buffered = new Map<string, NodeTelemetry>();
         let bufferedServerTime: number | null = null;
 
-        function apply(updates: readonly NodeTelemetry[], serverTime: number | null) {
+        function apply(updates: readonly NodeTelemetry[], serverTime: number | null, at: number) {
           const state = get();
+          const byId = mergeUpdates(state.byId, updates);
           return {
-            byId: mergeUpdates(state.byId, updates),
+            byId,
+            criticalSince: trackCriticalEntries(state.criticalSince, {
+              previous: state.byId,
+              next: byId,
+              changed: updates,
+              at,
+            }),
             serverTime: latestOf(state.serverTime, [
               serverTime,
               ...updates.map((u) => u.timestamp),
@@ -93,6 +104,7 @@ export function createTelemetryStore(
 
         return {
           byId: createDictionary<NodeTelemetry>(),
+          criticalSince: createDictionary<number>(),
           epoch: 0,
           connection: 'offline',
           lastMessageAt: null,
@@ -102,14 +114,22 @@ export function createTelemetryStore(
             applySnapshot: (nodes, receivedAt) => {
               buffered.clear();
               bufferedServerTime = null;
+              const state = get();
+              const byId = indexNodes(nodes);
               set(
                 {
-                  byId: indexNodes(nodes),
+                  byId,
+                  criticalSince: trackCriticalEntries(state.criticalSince, {
+                    previous: state.byId,
+                    next: byId,
+                    changed: nodes,
+                    at: receivedAt,
+                  }),
                   serverTime: latestOf(
                     null,
                     nodes.map((node) => node.timestamp),
                   ),
-                  epoch: get().epoch + 1,
+                  epoch: state.epoch + 1,
                   lastMessageAt: receivedAt,
                 },
                 false,
@@ -118,17 +138,33 @@ export function createTelemetryStore(
               history.record(nodes, 'snapshot');
             },
             applyBatch: (batch) => {
-              if (get().paused) {
+              const state = get();
+              if (state.paused) {
                 for (const update of batch.updates) {
                   buffered.set(update.nodeId, update);
                 }
                 bufferedServerTime = latestOf(bufferedServerTime, [batch.serverTime]);
-                set({ lastMessageAt: batch.receivedAt }, false, 'applyBatch/buffered');
+                set(
+                  {
+                    lastMessageAt: batch.receivedAt,
+                    criticalSince: trackCriticalEntries(state.criticalSince, {
+                      previous: state.byId,
+                      next: state.byId,
+                      changed: [],
+                      at: batch.receivedAt,
+                    }),
+                  },
+                  false,
+                  'applyBatch/buffered',
+                );
                 return;
               }
 
               set(
-                { ...apply(batch.updates, batch.serverTime), lastMessageAt: batch.receivedAt },
+                {
+                  ...apply(batch.updates, batch.serverTime, batch.receivedAt),
+                  lastMessageAt: batch.receivedAt,
+                },
                 false,
                 'applyBatch',
               );
@@ -141,7 +177,9 @@ export function createTelemetryStore(
               const serverTime = bufferedServerTime;
               buffered.clear();
               bufferedServerTime = null;
-              set({ ...apply(updates, serverTime), paused: false }, false, 'resume');
+              // The latest flush time is the store's clock; it keeps moving while paused.
+              const at = get().lastMessageAt ?? 0;
+              set({ ...apply(updates, serverTime, at), paused: false }, false, 'resume');
               history.record(updates);
             },
           },

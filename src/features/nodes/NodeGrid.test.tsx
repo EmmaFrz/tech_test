@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useTelemetryStore, useUiStore } from '@/store';
-import { makeNode, makeNodes } from '@/test/factories';
+import { CRITICAL_PULSE_MS } from '@/domain/criticalEntries';
+import { ORDER_REFRESH_MS, useTelemetryStore, useUiStore } from '@/store';
+import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
 import { mockElementLayout } from '@/test/layout';
 import { resetStores, seedFleet, startVisibleNodes } from '@/test/stores';
+import type { NodeTelemetry } from '@shared/protocol';
 
 import { NodeGrid } from './NodeGrid';
 
@@ -154,5 +156,93 @@ describe('NodeGrid', () => {
 
     expect(within(screen.getByTestId('node-grid')).getByText('777 ms')).toBeVisible();
     expect(row).toBeInTheDocument();
+  });
+});
+
+describe('NodeGrid during live updates', () => {
+  let stopSync: () => void;
+
+  function applyUpdates(...updates: readonly NodeTelemetry[]): void {
+    act(() =>
+      useTelemetryStore.getState().actions.applyBatch({
+        updates,
+        serverTime: null,
+        receivedAt: Date.now(),
+      }),
+    );
+  }
+
+  function refreshOrder(): void {
+    act(() => {
+      vi.advanceTimersByTime(ORDER_REFRESH_MS);
+    });
+  }
+
+  function button(nodeId: string): HTMLElement {
+    return screen.getByRole('button', { name: nodeId });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockElementLayout({ viewportHeight: 440, rowHeight: 44 });
+    resetStores();
+    stopSync = startVisibleNodes();
+  });
+
+  afterEach(() => {
+    stopSync();
+    vi.useRealTimers();
+  });
+
+  describe('critical pulse', () => {
+    function rowOf(nodeId: string): HTMLElement | null {
+      return button(nodeId).closest('[role="row"]');
+    }
+
+    it('pulses a node that enters CRITICAL while the CRITICAL filter hid it', () => {
+      seedFleet([
+        makeNode({ nodeId: 'node-0001', status: 'CRITICAL' }),
+        makeNode({ nodeId: 'node-0002', status: 'OK' }),
+      ]);
+      act(() => useUiStore.getState().actions.setStatusFilter('CRITICAL'));
+      render(<NodeGrid />);
+
+      applyUpdates(
+        makeNode({ nodeId: 'node-0002', status: 'CRITICAL', timestamp: TEST_TIMESTAMP + 1 }),
+      );
+      refreshOrder();
+
+      expect(rowOf('node-0002')?.className).toMatch(/pulse/);
+      expect(rowOf('node-0001')?.className).not.toMatch(/pulse/);
+      act(() => {
+        vi.advanceTimersByTime(CRITICAL_PULSE_MS);
+      });
+      expect(rowOf('node-0002')?.className).not.toMatch(/pulse/);
+    });
+
+    it('does not pulse a node revealed after its pulse window has passed', () => {
+      seedFleet([makeNode({ nodeId: 'node-0001' }), makeNode({ nodeId: 'node-0002' })]);
+      act(() => useUiStore.getState().actions.setSearch('0001'));
+      render(<NodeGrid />);
+      applyUpdates(
+        makeNode({ nodeId: 'node-0002', status: 'CRITICAL', timestamp: TEST_TIMESTAMP + 1 }),
+      );
+      act(() => {
+        vi.advanceTimersByTime(CRITICAL_PULSE_MS);
+      });
+      applyUpdates();
+
+      act(() => useUiStore.getState().actions.setSearch(''));
+
+      expect(rowOf('node-0002')?.className).not.toMatch(/pulse/);
+    });
+
+    it('does not pulse nodes that are already critical in the first snapshot', () => {
+      seedFleet([makeNode({ status: 'CRITICAL' })]);
+
+      render(<NodeGrid />);
+
+      expect(rowOf('node-0001')?.className).not.toMatch(/pulse/);
+    });
   });
 });

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryStore } from './historyStore';
 import type { TelemetryStore } from './telemetryStore';
 
+import { CRITICAL_PULSE_MS } from '@/domain/criticalEntries';
 import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
 
 import { createHistoryStore } from './historyStore';
@@ -218,6 +219,66 @@ describe('telemetryStore', () => {
       actions.resume();
       expect(Object.getPrototypeOf(store.getState().byId)).toBeNull();
       expect(store.getState().byId['node-0002']?.latencyMs).toBe(400);
+    });
+  });
+
+  describe('critical entries', () => {
+    it('stamps a node that turns CRITICAL with the time of the flush that showed it', () => {
+      const { actions } = store.getState();
+      actions.applySnapshot([makeNode({ status: 'OK' })], 1);
+
+      actions.applyBatch({
+        updates: [makeNode({ status: 'CRITICAL' })],
+        serverTime: null,
+        receivedAt: 500,
+      });
+
+      expect(store.getState().criticalSince).toEqual({ 'node-0001': 500 });
+    });
+
+    it('records no entry for a node that is already CRITICAL in the first snapshot', () => {
+      store.getState().actions.applySnapshot([makeNode({ status: 'CRITICAL' })], 1);
+
+      expect(store.getState().criticalSince).toEqual({});
+    });
+
+    it('records an entry when a replacement snapshot shows a known node turned CRITICAL', () => {
+      const { actions } = store.getState();
+      actions.applySnapshot([makeNode({ status: 'OK' })], 1);
+
+      actions.applySnapshot([makeNode({ status: 'CRITICAL' })], 900);
+
+      expect(store.getState().criticalSince).toEqual({ 'node-0001': 900 });
+    });
+
+    it('expires an entry on the first flush after the pulse window', () => {
+      const { actions } = store.getState();
+      actions.applySnapshot([makeNode({ status: 'OK' })], 1);
+      actions.applyBatch({
+        updates: [makeNode({ status: 'CRITICAL' })],
+        serverTime: null,
+        receivedAt: 500,
+      });
+
+      actions.applyBatch({ updates: [], serverTime: 1, receivedAt: 500 + CRITICAL_PULSE_MS });
+
+      expect(store.getState().criticalSince).toEqual({});
+    });
+
+    it('waits for resume to record transitions buffered while paused', () => {
+      const { actions } = store.getState();
+      actions.applySnapshot([makeNode({ status: 'OK' })], 1);
+      actions.pause();
+      actions.applyBatch({
+        updates: [makeNode({ status: 'CRITICAL' })],
+        serverTime: null,
+        receivedAt: 700,
+      });
+      expect(store.getState().criticalSince).toEqual({});
+
+      actions.resume();
+
+      expect(store.getState().criticalSince).toEqual({ 'node-0001': 700 });
     });
   });
 });

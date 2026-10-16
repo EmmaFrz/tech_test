@@ -4,7 +4,7 @@ import type { CSSProperties, ReactElement } from 'react';
 
 import { formatLatency, formatPercent, formatUtcTime } from '@/domain/format';
 import { CPU_THRESHOLDS, MEMORY_THRESHOLDS } from '@/domain/thresholds';
-import { useIsNodeStale, useNodeById } from '@/store';
+import { useCriticalSince, useIsNodeStale, useNodeById } from '@/store';
 import { Badge, MeterBar } from '@/ui';
 
 import { nodeButtonId } from './gridNavigation';
@@ -37,7 +37,7 @@ export const NodeRow = memo(function NodeRow({
 }: NodeRowProps): ReactElement | null {
   const node = useNodeById(nodeId);
   const isStale = useIsNodeStale(nodeId);
-  const isPulsing = useCriticalPulse(node?.status);
+  const isPulsing = useCriticalPulse(useCriticalSince(nodeId));
 
   if (node === undefined) {
     return null;
