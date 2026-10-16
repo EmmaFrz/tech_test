@@ -73,4 +73,4 @@ jobs:
         run: $COMPOSE_COMMAND logs --no-color
       - name: Stop containers
         if: always()
-        run: $COMPOSE_COMMAND down --volumes
+        run: $COMPOSE_COMMAND --profile dev --profile test --profile e2e down --volumes --remove-orphans

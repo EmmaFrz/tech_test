@@ -34,6 +34,7 @@ docker compose --profile dev up --build web-dev mock-server
 ```
 
 Open <http://localhost:5173>. Changes in `src/` and `shared/` are mounted into the development container.
+Stop that stack with `docker compose --profile dev down`.
 
 For local development, use Node.js 22.12+ and npm:
 
