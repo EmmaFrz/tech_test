@@ -51,7 +51,7 @@ The mock server is configured through environment variables, inline or in a `.en
 | `TICK_MS`        | `100`   | Milliseconds between update batches                                  |
 | `UPDATE_RATIO`   | `0.3`   | Fraction of nodes that report in each batch                          |
 | `SEED`           | `42`    | Seed of the deterministic generator (mulberry32)                     |
-| `FORCE_CRITICAL` | `3`     | Nodes pinned to `CRITICAL`, so demos and tests always have some      |
+| `FORCE_CRITICAL` | `3`     | Nodes pinned to `CRITICAL` (all of them in fleets smaller than 3)    |
 | `DROPOUT_RATIO`  | `0.01`  | Chance per batch that one node goes silent for 12 to 24 seconds      |
 | `LOG_LEVEL`      | `info`  | `debug`, `info`, `warn` or `error`; logs are one JSON line per event |
 
@@ -87,7 +87,9 @@ docker-compose --profile test run --build --rm unit
 ```
 
 The image first checks formatting, linting and types, then runs the tests with coverage thresholds
-(at least 90 % of lines in `domain`, `data` and `store`; at least 70 % overall).
+(at least 90 % of lines in `domain`, `data` and `store`; at least 70 % overall). Building the
+production image enforces the same thresholds, so `docker-compose up --build` fails if coverage
+drops below them.
 
 ### End-to-end tests (Cypress)
 
@@ -101,6 +103,12 @@ against `http://web:3000`. Covered journeys:
 1. **Critical triage**: filter by `CRITICAL`, open the first node, confirm the panel shows the same
    node ID, its values and a chart, then pause and confirm every visible row is critical.
 2. **Sorting**: sort by latency (descending), pause the live view and confirm the order, then resume.
+3. **Detail drawer** (below 1280 px): keyboard focus moves into the drawer and back to its row,
+   the covered grid stays out of reach, and Pause stays usable when the header wraps.
+4. **Live grid**: keyboard focus survives reorders, filter changes and snapshots, and a node that
+   turns critical while filtered out pulses when it appears (except with reduced motion).
+
+The last two replace the WebSocket with a deterministic in-page source, so they need no server data.
 
 The first run pulls the Cypress image, which is large; later runs reuse it.
 
@@ -156,7 +164,7 @@ Set `CYPRESS_baseUrl` to run Cypress against another URL.
 ├── mock-server/             # Telemetry simulator (TypeScript + ws)
 ├── shared/protocol.ts       # Wire types shared by client and server
 ├── cypress/                 # End-to-end specs and shared selectors
-├── scripts/check-stack.mjs  # Smoke test used by CI: routes, health, telemetry stream
+├── scripts/                 # CI checks: routes, health and stream; recovery after backend recreation
 ├── src/
 │   ├── app/                 # Composition: providers, layout, error boundaries, wiring
 │   ├── domain/              # Pure logic: filters, sorters, metrics, formatting, chart math
@@ -179,7 +187,7 @@ Set `CYPRESS_baseUrl` to run Cypress against another URL.
   store at most once per animation frame.
 - **Fine-grained rendering.** Each grid row subscribes only to its own node, so an update re-renders
   that row and the aggregates, never the whole grid.
-- **Responsive input.** Search and the grid render on deferred values; row order refreshes at most
+- **Responsive input.** Search writes a deferred value to the store; row order refreshes at most
   once per second while values stay live.
 - **Virtualized grid** to stay interactive with thousands of nodes.
 
@@ -191,7 +199,7 @@ in [ARCHITECTURE.md](./ARCHITECTURE.md).
 | Problem                                 | Fix                                                                                         |
 | --------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Port 3000 or 4000 already in use        | Stop the other process, or change the host side of the port mapping in `docker-compose.yml` |
-| Dashboard shows "Reconnecting"          | Check `docker-compose logs mock-server`; the client retries automatically                   |
+| Dashboard shows "Reconnecting"          | Check `docker-compose logs mock-server`; the client retries, also after a silent connection |
 | Stale containers after changes          | `docker-compose down`, then `docker-compose up --build`                                     |
 | Cypress image download is slow          | The first `--profile e2e` run pulls the image; later runs reuse it                          |
 | Docker engine does not start on Windows | Enable virtualization in the BIOS and the WSL 2 backend in Docker Desktop                   |

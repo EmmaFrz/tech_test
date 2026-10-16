@@ -26,13 +26,17 @@ and how it would scale to 10,000+ streaming nodes.
 **Same-origin WebSocket.** The client always connects to `ws(s)://<current host>/ws`. nginx (and the
 Vite dev server) proxy that path to `mock-server:4000`. There is no CORS, no hard-coded host, and the
 same build works from the host browser (`localhost:3000`) and from the Cypress container
-(`web:3000`).
+(`web:3000`). nginx resolves `mock-server` through Docker's DNS at runtime (`resolver` plus an
+upstream with `resolve`), so a recreated backend on a new address is reached without a reload; CI
+recreates the backend on a new address and checks that a connected client gets a fresh snapshot.
 
 **Wire protocol.** `shared/protocol.ts` defines the types used by both sides. On every connection the
 server sends one `snapshot`, then a `delta` per tick with only the nodes that reported, plus a
 `heartbeat` every two seconds. The server owns each node's `status`; the client never re-derives it.
 The client validates every message with hand-written type guards and drops, logs and counts anything
-malformed instead of letting it reach React.
+malformed instead of letting it reach React. Node timestamps and heartbeat times must be epoch
+milliseconds between 1970 and the end of year 9999: anything else could not be formatted and would
+move the server clock, and so staleness, out of reach.
 
 ## Frontend data flow
 
@@ -90,21 +94,35 @@ Decisions worth knowing:
 - **Fine-grained subscriptions.** `NodeRow` is memoized and subscribes to `byId[nodeId]` only.
   `applyBatch` copies the map but keeps the reference of every node that was not updated, so only
   the rows of updated nodes re-render. A test counts renders to prove it (see _Performance_).
+- **Prototype-free node maps.** The protocol accepts any non-empty node ID, so `byId` (and every
+  other map keyed by node ID) has no prototype: IDs such as `__proto__`, `constructor` or
+  `toString` are ordinary keys that can neither resolve to inherited values nor replace the
+  prototype. `createDictionary` in `lib/` builds them, and tests check every update path.
 - **Derived visible list outside React.** Subscribing the grid to `byId` would re-render it on every
   flush. Instead `startVisibleNodesSync()` subscribes to the stores directly and writes a new `ids`
   array only when membership or order actually changes. Filter, sort, search, pause and a new
   snapshot (`epoch`) recompute immediately; telemetry deltas recompute at most once per second,
-  because rows jumping on every tick are unreadable under load. Values inside rows stay live.
+  because rows jumping on every tick are unreadable under load. Values inside rows stay live. A
+  refresh that falls due between two flushes is handed to the batch scheduler and runs inside the
+  next animation frame, so a reorder always shares the commit of that frame's telemetry.
 - **Responsive input.** `useSyncExternalStore` updates are always synchronous, so wrapping store
-  writes in `startTransition` would have no effect. The deferral is applied on the consumer side
-  instead: the grid renders `useDeferredValue(ids)`, and the search box echoes keystrokes at once
-  while the store receives the deferred value.
+  writes in `startTransition` would have no effect. The search box echoes keystrokes at once while
+  the store receives a deferred value. The grid reads the visible list directly: it mounts only its
+  window, so a new list costs about as much as a value flush, and deferring it would split every
+  reorder into a second commit.
 - **Pause.** While paused, `applyBatch` merges updates into a non-reactive buffer and only refreshes
   `lastMessageAt`, so the connection indicator stays honest. `resume` applies the newest state per
   node in one update. A snapshot (reconnect) always applies immediately and discards the buffer,
   because it supersedes everything older.
 - **History.** Samples are recorded when a batch is applied, so charts freeze with the rest of the
-  view while paused and show a straight segment across the gap after resuming.
+  view while paused and show a straight segment across the gap after resuming. A snapshot is
+  recorded as the whole fleet: histories of nodes it no longer lists are dropped, and a history
+  whose clock it moves backwards (a different server session) restarts. A reconnect to the same
+  session continues every history, without duplicating the sample of a node that stayed silent.
+- **Critical entries.** The time a node moves from another status into `CRITICAL` is kept in the
+  store for the two seconds of its pulse, outside the row, so a row that only appears later (a
+  filter or a scroll reveals it) still pulses. A node's first appearance is never an entry, so the
+  first snapshot does not pulse; entries expire on the first flush after their window.
 - **Stale nodes.** A node is stale when the server clock is more than 10 s past its own timestamp.
   The reference is the newest server time seen (heartbeats, snapshots and updates), never the
   browser clock, so clock skew cannot mark healthy nodes stale. Stale nodes leave the overview
@@ -115,24 +133,34 @@ Decisions worth knowing:
 
 `TelemetryClient` moves through `connecting → live → reconnecting → offline`. It becomes `live` on
 the first valid message (not on socket open), resets its backoff at that point, and retries with
-exponential backoff and ±20 % jitter: 0.5 s, 1 s, 2 s … capped at 10 s. After five consecutive failed
-attempts it reports `offline` but keeps retrying at the cap. The UI shows the state, the time since
+exponential backoff and ±20 % jitter: 0.5 s, 1 s, 2 s, 4 s. The fifth consecutive failure reports
+`offline`, and from then on every retry waits the 10 s cap. The UI shows the state, the time since
 the last flush, and a banner when the connection is lost or the stream goes quiet for more than
 three seconds.
+
+A socket can also stay open while nothing useful arrives: a half-open connection, a stalled
+network path, or a peer that only sends invalid messages. A watchdog therefore treats the
+connection as failed when no valid message arrives within 15 s of opening the socket or 10 s of
+the previous valid message (five missed heartbeats), closes the socket and goes through the same
+retry policy. Only valid messages re-arm it, on receipt rather than in the animation-frame flush,
+so a background tab whose frames are paused does not trip it; background timer throttling can only
+delay the check.
 
 ## Rendering
 
 - **Virtualization.** `@tanstack/react-virtual` mounts only the visible rows plus an overscan.
   Row height comes from the design tokens (rows are measured), not from a constant in code.
 - **Critical escalation.** Critical rows get a red accent and tinted background; a node that
-  _enters_ `CRITICAL` pulses for two seconds (disabled under `prefers-reduced-motion`); the Critical
-  Alerts card switches to an alert state; the browser tab title carries the count, e.g. `(3) Fleet Ops`.
+  _enters_ `CRITICAL` pulses for two seconds (disabled under `prefers-reduced-motion`), including
+  when its row only appears because a filter now lists it; the Critical Alerts card switches to an
+  alert state; the browser tab title carries the count, e.g. `(3) Fleet Ops`.
 - **Charts.** Hand-written SVG polylines (`domain/chart.ts` does the math): no charting dependency
   for two small series. Lines differ by style and have a text legend, so color is never the only cue.
 - **Error boundaries.** Overview, filters, grid and detail panel each sit in their own boundary, so
   one failing region cannot blank the page.
 - **Layout.** At 1280 px and wider the detail panel sits beside the grid. Below that it becomes a
-  drawer that starts under the header, so connection status and pause stay reachable.
+  drawer positioned against `<main>`, which starts under the header however tall the header wraps
+  (narrow widths, larger text, longer labels), so connection status and Pause stay reachable.
 
 ## Accessibility
 
@@ -142,12 +170,27 @@ focus; Esc closes the detail panel. Filters are native radio inputs, search and 
 controls, meters expose `role="meter"` with values, and every animation respects
 `prefers-reduced-motion`.
 
+Live data never strands keyboard focus. A row that leaves the rendered window (reorder, filter,
+snapshot) takes its focus with it, and a row that React moves can lose it in some browsers, so after
+each commit the grid gives focus back to the row that had it; when that row is gone, the grid itself
+takes focus and the arrow keys continue from the gap the row left. Focus that the user placed outside
+the grid is left alone.
+
+Below 1280 px the open drawer takes focus, and the regions it covers (overview, filters, grid)
+become `inert`, so Tab and Shift+Tab move between the header controls and the drawer only. Closing
+it with Close, Esc or the backdrop returns focus to the node's row, scrolled into view, or to the
+grid when the row has left the list; focus already moved elsewhere stays there.
+
 ## Performance
 
 **Render budget (automated).** `src/app/renderBudget.test.tsx` drives the real pipeline with a fake
 socket and a manual animation-frame clock and asserts that 60 messages in one frame produce exactly
 one React commit, that three updated nodes re-render three rows (not the whole window), that a
-heartbeat-only frame re-renders no row, and that untouched nodes keep their object reference.
+heartbeat-only frame re-renders no row, and that untouched nodes keep their object reference. It
+also covers order and membership changes: a flush that reorders the rows, a reorder that falls due
+between flushes (with and without telemetry in its frame) and a node entering the active filter
+each produce exactly one commit in their frame. The "updated Xs ago" indicators tick on their own
+timers and are outside this budget.
 
 **Stress run (manual).** Production build served by `vite preview`, driven by Cypress 16.2 in
 headless Chromium (Windows 11). Ten seconds of steady streaming after a three-second warm-up:
@@ -161,27 +204,43 @@ At 5,000 nodes the server emits 1,500 node updates per tick, 15,000 per second. 
 frames are not vsync-limited, so read the intervals as relative responsiveness rather than a 60 Hz
 budget; the point is that moving from 200 to 5,000 nodes does not produce long tasks.
 
+Those numbers predate the change that stopped deferring the grid's node list. A paired comparison
+afterwards (both builds behind nginx on the same 5,000-node stream, headless Electron, medians of
+four alternating runs with nine interactions each) measured the time until the grid shows the
+result: 36 ms against 46 ms before for a filter click, and 38 ms against 39 ms for a sort change.
+The first paint after a sort change now comes about 8 ms later (33 ms against 25 ms), because it
+already contains the reordered grid instead of only the toolbar.
+
 ## Testing
 
 - **Unit and integration (Vitest + Testing Library).** Pure domain logic, message guards, the batch
-  scheduler (fake frame clock), the client's backoff (fake socket and timers), the stores, the
-  derived list, every primitive and every feature. Coverage thresholds are enforced: ≥ 90 % lines in
-  `domain/`, `data/`, `store/` and ≥ 70 % overall.
+  scheduler (fake frame clock), the client's backoff and watchdog (fake socket and timers), the
+  stores with a real history, the derived list, every primitive and every feature. Coverage
+  thresholds (≥ 90 % lines in `domain/`, `data/`, `store/`, ≥ 70 % overall) are enforced by the
+  Docker build and by the `unit` profile, so CI fails when coverage drops.
 - **Mock server.** Simulation determinism, bounds, forced critical nodes and dropouts are tested
-  without sockets; one integration test covers the real HTTP and WebSocket surface.
+  without sockets; integration tests cover the real HTTP and WebSocket surface, and subprocess
+  tests cover a startup on a taken port through the real entry point.
 - **End to end (Cypress against the full stack).** Critical triage and sorting journeys. The mock
   server is seeded and pins `FORCE_CRITICAL` nodes, so critical data always exists. Assertions are
   retry-able, there are no fixed waits, and the Pause control freezes the grid before order- and
-  status-sensitive checks.
+  status-sensitive checks. Two more specs replace the WebSocket with a deterministic in-page source
+  to check keyboard focus in the drawer and the live grid, the wrapped-header layout at 375 px
+  (normal and 200 % text), and the critical pulse with and without reduced motion.
 
 ## Containers and CI
 
 The web image has the stages `deps → dev → test → build → runtime`; the `test` stage runs
-formatting, lint and type checks, `build` runs the unit tests, and `runtime` is nginx running as an
-unprivileged user. The server image builds with `tsc` and runs production dependencies only, as a
-non-root user. Compose uses no `version:` key and only features available in v1.28+ and v2. GitHub
-Actions builds from a clean checkout with Compose v1 and v2, checks routes, health and the telemetry
-stream, runs the unit tests inside the container, boots the development profile and, in the Compose v2 job, runs Cypress.
+formatting, lint and type checks, `build` runs the unit tests with coverage thresholds, and
+`runtime` is nginx running as an unprivileged user. The server image builds with `tsc` and runs
+production dependencies only, as a non-root user. Compose uses no `version:` key and only features
+available in v1.28+ and v2. GitHub Actions builds from a clean checkout with Compose v1 and v2,
+checks routes, health and the telemetry stream, recreates the backend on a new address and checks
+that a connected client recovers through nginx, runs the unit tests inside the container, boots
+the development profile and, in the Compose v2 job, runs Cypress.
+
+Local leftovers of the Next.js migration branch (`.next/`, `next-env.d.ts`) are ignored by Git,
+Docker, Prettier and ESLint, so switching branches does not break checks or builds.
 
 ## Trade-offs made for the time box
 
@@ -195,6 +254,10 @@ stream, runs the unit tests inside the container, boots the development profile 
 - **Redux DevTools.** The stores opt into `devtools` in development, which can slow a 5,000-node
   stress run when the extension is installed.
 - **Server clock for staleness only.** Latency or timestamps are never corrected for transport delay.
+  The client trusts the server's clock within the accepted range; a plausible but wrong future time
+  would still mark nodes stale until the next snapshot.
+- **Pulse window.** Critical entries expire on the first flush after their two seconds, and a row
+  that appears inside that window plays the full pulse from when it appears.
 - **Polling the clock in the UI.** "Updated Xs ago" and the quiet-stream banner use small interval
   timers inside their own components.
 
