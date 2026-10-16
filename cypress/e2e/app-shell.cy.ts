@@ -4,7 +4,7 @@ describe('Application shell', () => {
       cy.visit(path);
       cy.title().should('eq', 'Fleet Ops');
       cy.get('main h1').should('have.text', 'A clear view of your fleet.');
-      cy.contains('Telemetry is not connected yet.').should('be.visible');
+      cy.get('[role="status"]').should('contain.text', 'Connection: live');
     }
   });
 });

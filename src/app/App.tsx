@@ -1,8 +1,13 @@
 import type { ReactElement } from 'react';
 
+import { useConnectionState, useFleetMetrics } from '@/store';
+
 import styles from './App.module.css';
 
 export function App(): ReactElement {
+  const connection = useConnectionState();
+  const metrics = useFleetMetrics();
+
   return (
     <main className={styles.shell}>
       <header className={styles.header}>
@@ -15,7 +20,9 @@ export function App(): ReactElement {
         <p className={styles.description}>
           This dashboard is being prepared. Live telemetry and node monitoring will appear here.
         </p>
-        <p className={styles.status}>Telemetry is not connected yet.</p>
+        <p className={styles.status} role="status">
+          Connection: {connection} · {metrics.activeNodes} active · {metrics.criticalCount} critical
+        </p>
       </section>
     </main>
   );
