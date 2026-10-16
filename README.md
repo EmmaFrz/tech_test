@@ -1,118 +1,197 @@
 # Fleet Ops
 
-A React and TypeScript dashboard for fleet monitoring. The initial scaffold provides the application
-shell, a shared telemetry protocol, quality checks and container configuration. Live telemetry, state
-management and dashboard features are the next implementation steps.
+A real-time fleet and operations monitoring dashboard built with React and TypeScript. It ingests a
+high-frequency telemetry stream over WebSocket and keeps the interface responsive while hundreds of
+nodes update several times per second.
 
-## Run with Docker
+- **Live telemetry** for every node: status, CPU load, memory usage, latency and timestamp.
+- **Fleet overview**: active nodes, critical alerts, warnings and average system latency.
+- **Node grid** with status filters (live counts), sorting, search by ID and virtualization for
+  thousands of rows.
+- **Node detail panel** with live charts of utilization and latency over time.
+- **Critical-event feedback**: highlighted rows, a brief pulse when a node turns critical, an alert
+  state on the overview and the critical count in the browser tab title.
+- **Connection awareness**: live, reconnecting or offline state, time since the last update,
+  automatic reconnect, and pause and resume of the live view.
 
-Requires Docker with Compose v2 or Compose v1.28+.
+## Quick start
 
-On Windows, Docker Desktop needs a working WSL 2 backend and hardware virtualization enabled.
-
-```sh
-docker compose up --build
-# Compose v1:
-docker-compose up --build
-```
-
-Legacy Compose on Docker Engine 29+ also needs `COMPOSE_API_VERSION=1.44` in the shell environment.
-The modern `docker compose` command negotiates the API version automatically.
-
-Open <http://localhost:3000>. The `web` service serves the application through nginx; `mock-server`
-provides `GET /health` on port 4000 and streams simulated telemetry over `/ws`: a `snapshot` on
-connect, a `delta` every tick and a `heartbeat` every 2 seconds.
+**Requirement:** Docker with Docker Compose (v2, or v1.28+). No local Node.js or `node_modules`
+needed.
 
 ```sh
-docker compose down
+git clone <repository-url>
+cd <repository-folder>
+docker-compose up --build        # or: docker compose up --build
 ```
 
-## Telemetry simulator configuration
+Open <http://localhost:3000>. This starts two containers:
 
-The simulator reads these variables, inline or from a `.env` file next to `docker-compose.yml`.
-Invalid values stop the server at startup with a descriptive error.
+| Service       | Description                                                      | Port |
+| ------------- | ---------------------------------------------------------------- | ---- |
+| `web`         | Production build served by nginx, which also proxies `/ws`       | 3000 |
+| `mock-server` | Telemetry simulator streaming over WebSocket, with `GET /health` | 4000 |
+
+Stop everything with `docker-compose down`.
+
+Notes:
+
+- On Windows, Docker Desktop needs a working WSL 2 backend and hardware virtualization enabled.
+- Legacy `docker-compose` (v1) on Docker Engine 29+ also needs `COMPOSE_API_VERSION=1.44` in the
+  shell environment. The modern `docker compose` command negotiates the API version itself.
+
+## Configuration
+
+The mock server is configured through environment variables, inline or in a `.env` file next to
+`docker-compose.yml`. Invalid values stop the server at startup with a descriptive error.
 
 | Variable         | Default | Description                                                          |
 | ---------------- | ------- | -------------------------------------------------------------------- |
 | `NODE_COUNT`     | `200`   | Number of simulated nodes                                            |
-| `TICK_MS`        | `100`   | Milliseconds between delta messages                                  |
-| `UPDATE_RATIO`   | `0.3`   | Fraction of nodes that report in each tick                           |
+| `TICK_MS`        | `100`   | Milliseconds between update batches                                  |
+| `UPDATE_RATIO`   | `0.3`   | Fraction of nodes that report in each batch                          |
 | `SEED`           | `42`    | Seed of the deterministic generator (mulberry32)                     |
 | `FORCE_CRITICAL` | `3`     | Nodes pinned to `CRITICAL`, so demos and tests always have some      |
-| `DROPOUT_RATIO`  | `0.01`  | Chance per tick that one node goes silent for 12 to 24 seconds       |
+| `DROPOUT_RATIO`  | `0.01`  | Chance per batch that one node goes silent for 12 to 24 seconds      |
 | `LOG_LEVEL`      | `info`  | `debug`, `info`, `warn` or `error`; logs are one JSON line per event |
 
+Example, a stress test with 5,000 nodes:
+
 ```sh
-NODE_COUNT=5000 docker compose up --build
+NODE_COUNT=5000 docker-compose up --build
 ```
 
-Status is derived on the server: `CRITICAL` when CPU ≥ 90 %, memory ≥ 92 % or latency ≥ 800 ms;
-`WARNING` when CPU ≥ 75 %, memory ≥ 80 % or latency ≥ 300 ms; otherwise `OK`.
+The same `SEED` replays the same stream, which makes a reported issue reproducible.
+
+### Status thresholds
+
+The server derives each node's status; the client never recomputes it.
+
+| Status     | Triggered when any of                       |
+| ---------- | ------------------------------------------- |
+| `CRITICAL` | CPU ≥ 90 %, memory ≥ 92 %, latency ≥ 800 ms |
+| `WARNING`  | CPU ≥ 75 %, memory ≥ 80 %, latency ≥ 300 ms |
+| `OK`       | otherwise                                   |
+
+A node that has not reported for more than 10 seconds is shown as **stale** and leaves the overview
+figures.
+
+## Running tests
+
+Every suite runs inside containers.
+
+### Unit and integration tests (Vitest and Testing Library)
+
+```sh
+docker-compose --profile test run --build --rm unit
+```
+
+The image first checks formatting, linting and types, then runs the tests with coverage thresholds
+(at least 90 % of lines in `domain`, `data` and `store`; at least 70 % overall).
+
+### End-to-end tests (Cypress)
+
+```sh
+docker-compose --profile e2e run --build --rm e2e
+```
+
+This starts `mock-server` and `web` if they are not running and executes the suite headlessly
+against `http://web:3000`. Covered journeys:
+
+1. **Critical triage**: filter by `CRITICAL`, open the first node, confirm the panel shows the same
+   node ID, its values and a chart, then pause and confirm every visible row is critical.
+2. **Sorting**: sort by latency (descending), pause the live view and confirm the order, then resume.
+
+The first run pulls the Cypress image, which is large; later runs reuse it.
 
 ## Development
 
+### With Docker (hot reload)
+
 ```sh
-docker compose --profile dev up --build web-dev mock-server
+docker-compose --profile dev up --build web-dev mock-server
 ```
 
-Open <http://localhost:5173>. Changes in `src/` and `shared/` are mounted into the development container.
-Stop that stack with `docker compose --profile dev down`.
+Open <http://localhost:5173>. `src/`, `shared/`, `index.html` and `vite.config.ts` are mounted into
+the container. Stop it with `docker-compose --profile dev down`.
 
-For local development, use Node.js 22.12+ and npm:
+### Locally (optional, Node.js 22.12+)
 
 ```sh
 npm ci
-npm run dev:mock
+npm run dev:mock      # telemetry source on port 4000
+npm run dev           # in a second terminal; Vite proxies /ws to localhost:4000
 ```
 
-In a second terminal, run `npm run dev`. Vite forwards `/ws` to port 4000. Set `WS_PROXY_TARGET` to
-override the development proxy destination.
+Set `WS_PROXY_TARGET` to point the development proxy somewhere else.
 
-## Quality checks
+### Scripts
 
-```sh
-npm run format:check
-npm run lint
-npm run typecheck
-npm run test:ci
-npm run test:coverage
-npm run build
-npm run build:mock
+| Script                  | Description                                               |
+| ----------------------- | --------------------------------------------------------- |
+| `npm run dev`           | Vite dev server                                           |
+| `npm run dev:mock`      | Mock server with reload                                   |
+| `npm run build`         | Type-check and production build to `dist/`                |
+| `npm run build:mock`    | Compile the mock server                                   |
+| `npm run preview`       | Serve the production build on port 3000                   |
+| `npm run typecheck`     | TypeScript `strict` check of app, server, Cypress, config |
+| `npm run lint`          | ESLint with zero warnings allowed                         |
+| `npm run format`        | Write Prettier formatting                                 |
+| `npm run format:check`  | Verify Prettier formatting                                |
+| `npm test`              | Vitest in watch mode                                      |
+| `npm run test:ci`       | Vitest single run                                         |
+| `npm run test:coverage` | Vitest with a coverage report and thresholds              |
+| `npm run e2e`           | Cypress headless (expects the app on `localhost:3000`)    |
+| `npm run e2e:open`      | Cypress interactive runner                                |
+
+Set `CYPRESS_baseUrl` to run Cypress against another URL.
+
+## Project structure
+
+```
+.
+├── Dockerfile               # Web image: deps → dev → test → build → runtime (nginx)
+├── docker-compose.yml       # mock-server, web, plus profiles dev, test, e2e
+├── nginx/                   # SPA fallback and /ws proxy
+├── mock-server/             # Telemetry simulator (TypeScript + ws)
+├── shared/protocol.ts       # Wire types shared by client and server
+├── cypress/                 # End-to-end specs and shared selectors
+├── scripts/check-stack.mjs  # Smoke test used by CI: routes, health, telemetry stream
+├── src/
+│   ├── app/                 # Composition: providers, layout, error boundaries, wiring
+│   ├── domain/              # Pure logic: filters, sorters, metrics, formatting, chart math
+│   ├── data/                # WebSocket client, message guards, batch scheduler
+│   ├── store/               # Zustand stores, derived visible list, selector hooks
+│   ├── features/            # overview, nodes, node-detail, connection
+│   ├── ui/                  # Design tokens and accessible primitives
+│   ├── lib/                 # Logger, assertNever, URL resolution, memoizeLast
+│   └── test/                # Fixtures, MockWebSocket, store and layout helpers
+├── ARCHITECTURE.md
+├── CANDIDATE_ID.txt
+└── README.md
 ```
 
-`npm run format` applies formatting. `npm test` starts Vitest in watch mode. `npm run preview` serves
-the production build on port 3000. `npm run e2e` runs Cypress against that port; `npm run e2e:open`
-opens its interactive runner. Set `CYPRESS_baseUrl` to use another application URL.
+## Architecture at a glance
 
-The initial tests cover the shell and SPA navigation. Telemetry and triage tests will be added with
-their features.
+- **Same-origin WebSocket.** The client connects to `/ws` on whatever host serves it; nginx, or Vite
+  in development, proxies it to the mock server.
+- **Batched ingestion.** Incoming messages are coalesced (latest value per node) and applied to the
+  store at most once per animation frame.
+- **Fine-grained rendering.** Each grid row subscribes only to its own node, so an update re-renders
+  that row and the aggregates, never the whole grid.
+- **Responsive input.** Search and the grid render on deferred values; row order refreshes at most
+  once per second while values stay live.
+- **Virtualized grid** to stay interactive with thousands of nodes.
 
-```sh
-docker compose --profile test run --build --rm unit
-docker compose --profile e2e run --build --rm e2e
-```
+Design decisions, trade-offs, measurements and the plan for scaling to 10,000+ streaming nodes are
+in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-The web image runs formatting, linting, type checks and unit tests before producing the runtime image.
-The Cypress image uses the same version as `package.json` and runs as a non-root user.
+## Troubleshooting
 
-GitHub Actions builds from a clean checkout with Compose v1 and v2, checks the HTTP routes and
-WebSocket proxy, and runs tests inside the containers. The legacy Compose job selects API 1.44
-explicitly for compatibility with current Docker Engines.
-
-## Structure
-
-| Path            | Responsibility                                       |
-| --------------- | ---------------------------------------------------- |
-| `src/app/`      | Application shell, layout and composition            |
-| `src/domain/`   | Pure domain calculations                             |
-| `src/data/`     | Transport, validation and batching                   |
-| `src/store/`    | State and selector hooks                             |
-| `src/features/` | Overview, nodes, node detail and connection features |
-| `src/ui/`       | Design tokens and reusable components                |
-| `src/lib/`      | Framework-independent utilities                      |
-| `src/test/`     | Test setup and shared fixtures                       |
-| `shared/`       | Client/server wire protocol                          |
-| `mock-server/`  | Telemetry service                                    |
-| `cypress/`      | Browser journeys                                     |
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for dependency rules and implementation boundaries.
+| Problem                                 | Fix                                                                                         |
+| --------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Port 3000 or 4000 already in use        | Stop the other process, or change the host side of the port mapping in `docker-compose.yml` |
+| Dashboard shows "Reconnecting"          | Check `docker-compose logs mock-server`; the client retries automatically                   |
+| Stale containers after changes          | `docker-compose down`, then `docker-compose up --build`                                     |
+| Cypress image download is slow          | The first `--profile e2e` run pulls the image; later runs reuse it                          |
+| Docker engine does not start on Windows | Enable virtualization in the BIOS and the WSL 2 backend in Docker Desktop                   |
