@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import type { HistorySample } from './historyStore';
@@ -87,9 +87,12 @@ export function useMillisecondsSinceLastMessage(refreshMs: number): number | nul
   return elapsedMs;
 }
 
-/** Deferred so typing and filter clicks stay responsive while the grid catches up. */
+/**
+ * Not deferred: a reorder must land in the same commit as the flush that caused it. The grid
+ * mounts only its visible window, and the search box already writes a deferred value.
+ */
 export function useVisibleNodeIds(): readonly string[] {
-  return useDeferredValue(useVisibleNodesStore((state) => state.ids));
+  return useVisibleNodesStore((state) => state.ids);
 }
 
 export function useIsNodeVisible(nodeId: string): boolean {

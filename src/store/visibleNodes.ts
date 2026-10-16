@@ -33,6 +33,15 @@ export interface VisibleNodesSyncOptions {
   readonly ui?: StoreApi<UiState>;
   readonly target?: StoreApi<VisibleNodesState>;
   readonly now?: () => number;
+  /**
+   * Runs an order refresh that falls due between telemetry flushes. The telemetry wiring passes
+   * its frame scheduler, so the refresh shares the next flush's commit; by default it runs at once.
+   */
+  readonly runRefresh?: (refresh: () => void) => void;
+}
+
+function runImmediately(refresh: () => void): void {
+  refresh();
 }
 
 function haveSameItems(left: readonly string[], right: readonly string[]): boolean {
@@ -50,10 +59,13 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
   const ui = options.ui ?? useUiStore;
   const target = options.target ?? useVisibleNodesStore;
   const now = options.now ?? Date.now;
+  const runRefresh = options.runRefresh ?? runImmediately;
   let lastComputedAt = Number.NEGATIVE_INFINITY;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let isRefreshDue = false;
 
   function clearRefreshTimer(): void {
+    isRefreshDue = false;
     if (refreshTimer !== null) {
       clearTimeout(refreshTimer);
       refreshTimer = null;
@@ -74,6 +86,12 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
     }
   }
 
+  function refreshIfDue(): void {
+    if (isRefreshDue) {
+      recompute();
+    }
+  }
+
   function scheduleRecompute(): void {
     const elapsedMs = now() - lastComputedAt;
     if (elapsedMs >= ORDER_REFRESH_MS) {
@@ -81,7 +99,11 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
       return;
     }
 
-    refreshTimer ??= setTimeout(recompute, ORDER_REFRESH_MS - elapsedMs);
+    refreshTimer ??= setTimeout(() => {
+      refreshTimer = null;
+      isRefreshDue = true;
+      runRefresh(refreshIfDue);
+    }, ORDER_REFRESH_MS - elapsedMs);
   }
 
   const stopTelemetry = telemetry.subscribe((state, previous) => {

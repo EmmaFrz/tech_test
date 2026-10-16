@@ -120,6 +120,61 @@ describe('startVisibleNodesSync', () => {
     expect(target.getState().ids).toEqual(['node-0001', 'node-0002']);
   });
 
+  it('hands a refresh that falls due between data changes to runRefresh', () => {
+    stop();
+    const handed: (() => void)[] = [];
+    stop = startVisibleNodesSync({
+      telemetry,
+      ui,
+      target,
+      runRefresh: (refresh) => handed.push(refresh),
+    });
+    const { actions } = telemetry.getState();
+    actions.applySnapshot(nodesWithLatency(100, 200), 1);
+    actions.applyBatch({
+      updates: [makeNode({ nodeId: 'node-0001', latencyMs: 900, timestamp: TEST_TIMESTAMP + 100 })],
+      serverTime: null,
+      receivedAt: 2,
+    });
+
+    vi.advanceTimersByTime(ORDER_REFRESH_MS);
+    expect(handed).toHaveLength(1);
+    expect(target.getState().ids).toEqual(['node-0002', 'node-0001']);
+
+    handed[0]?.();
+    expect(target.getState().ids).toEqual(['node-0001', 'node-0002']);
+  });
+
+  it('skips a handed-over refresh that a later recompute already covered', () => {
+    stop();
+    const handed: (() => void)[] = [];
+    stop = startVisibleNodesSync({
+      telemetry,
+      ui,
+      target,
+      runRefresh: (refresh) => handed.push(refresh),
+    });
+    const { actions } = telemetry.getState();
+    actions.applySnapshot(nodesWithLatency(100, 200), 1);
+    actions.applyBatch({
+      updates: [makeNode({ nodeId: 'node-0001', latencyMs: 900, timestamp: TEST_TIMESTAMP + 100 })],
+      serverTime: null,
+      receivedAt: 2,
+    });
+    vi.advanceTimersByTime(ORDER_REFRESH_MS);
+    ui.getState().actions.setSearch('node');
+    expect(target.getState().ids).toEqual(['node-0001', 'node-0002']);
+    actions.applyBatch({
+      updates: [makeNode({ nodeId: 'node-0002', latencyMs: 999, timestamp: TEST_TIMESTAMP + 200 })],
+      serverTime: null,
+      receivedAt: 3,
+    });
+
+    handed[0]?.();
+
+    expect(target.getState().ids).toEqual(['node-0001', 'node-0002']);
+  });
+
   it('stops reacting after the synchronization is stopped', () => {
     stop();
 
