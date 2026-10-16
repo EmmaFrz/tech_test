@@ -41,6 +41,14 @@ export function createTelemetryServer(options: TelemetryServerOptions): Telemetr
     response.end(JSON.stringify({ error: 'not found' }));
   });
   const socketServer = new WebSocketServer({ server: httpServer, path: '/ws' });
+  // ws re-emits every HTTP server error here, and an emitter without an 'error' listener throws,
+  // which would crash the process before start() could reject. Startup errors reject start();
+  // later ones are logged.
+  socketServer.on('error', (error) => {
+    if (httpServer.listening) {
+      logger.error('server error', { error: error.message });
+    }
+  });
 
   function broadcast(message: ServerMessage): void {
     const payload = JSON.stringify(message);
@@ -94,16 +102,16 @@ export function createTelemetryServer(options: TelemetryServerOptions): Telemetr
         httpServer.once('error', reject);
         httpServer.listen(config.port, '0.0.0.0', () => {
           httpServer.off('error', reject);
-          timers = [
-            setInterval(broadcastDelta, config.tickMs),
-            setInterval(broadcastHeartbeat, config.heartbeatMs),
-          ];
           const address = httpServer.address();
           if (address === null || typeof address === 'string') {
             reject(new Error('server address is unavailable after listen'));
             return;
           }
 
+          timers = [
+            setInterval(broadcastDelta, config.tickMs),
+            setInterval(broadcastHeartbeat, config.heartbeatMs),
+          ];
           logger.info('server listening', {
             port: address.port,
             nodeCount: config.nodeCount,
