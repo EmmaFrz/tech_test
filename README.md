@@ -1,8 +1,8 @@
 # Fleet Ops
 
-A real-time fleet and operations monitoring dashboard built with React and TypeScript. It ingests a
-high-frequency telemetry stream over WebSocket and keeps the interface responsive while hundreds of
-nodes update several times per second.
+A real-time fleet and operations monitoring dashboard built with Next.js (App Router), React and
+TypeScript. It ingests a high-frequency telemetry stream over WebSocket and keeps the interface
+responsive while hundreds of nodes update several times per second.
 
 - **Live telemetry** for every node: status, CPU load, memory usage, latency and timestamp.
 - **Fleet overview**: active nodes, critical alerts, warnings and average system latency.
@@ -25,20 +25,23 @@ cd <repository-folder>
 docker-compose up --build        # or: docker compose up --build
 ```
 
-Open <http://localhost:3000>. This starts two containers:
+Open <http://localhost:3000>. This starts three containers:
 
-| Service       | Description                                                      | Port |
-| ------------- | ---------------------------------------------------------------- | ---- |
-| `web`         | Production build served by nginx, which also proxies `/ws`       | 3000 |
-| `mock-server` | Telemetry simulator streaming over WebSocket, with `GET /health` | 4000 |
+| Service       | Description                                                                   | Port |
+| ------------- | ----------------------------------------------------------------------------- | ---- |
+| `web`         | nginx edge: proxies `/ws` to `mock-server` and every other path to `app`      | 3000 |
+| `app`         | Next.js server (standalone production build) that renders and serves the page | 3001 |
+| `mock-server` | Telemetry simulator streaming over WebSocket, with `GET /health`              | 4000 |
 
-Stop everything with `docker-compose down`.
+`app` is reachable only through `web`. Stop everything with `docker-compose down`.
 
 Notes:
 
 - On Windows, Docker Desktop needs a working WSL 2 backend and hardware virtualization enabled.
 - Legacy `docker-compose` (v1) on Docker Engine 29+ also needs `COMPOSE_API_VERSION=1.44` in the
   shell environment. The modern `docker compose` command negotiates the API version itself.
+- Next.js telemetry is disabled in the images and in CI (`NEXT_TELEMETRY_DISABLED=1`). To opt out on
+  your own machine, export the same variable or run `npx next telemetry disable`.
 
 ## Configuration
 
@@ -95,8 +98,9 @@ The image first checks formatting, linting and types, then runs the tests with c
 docker-compose --profile e2e run --build --rm e2e
 ```
 
-This starts `mock-server` and `web` if they are not running and executes the suite headlessly
-against `http://web:3000`. Covered journeys:
+This starts `mock-server`, `app` and `web` if they are not running and executes the suite headlessly
+against `http://web:3000`. Every test also fails if the page logs a console error, which catches
+hydration problems. Covered journeys:
 
 1. **Critical triage**: filter by `CRITICAL`, open the first node, confirm the panel shows the same
    node ID, its values and a chart, then pause and confirm every visible row is critical.
@@ -112,28 +116,31 @@ The first run pulls the Cypress image, which is large; later runs reuse it.
 docker-compose --profile dev up --build web-dev mock-server
 ```
 
-Open <http://localhost:5173>. `src/`, `shared/`, `index.html` and `vite.config.ts` are mounted into
-the container. Stop it with `docker-compose --profile dev down`.
+Open <http://localhost:5173>. `src/`, `shared/` and `next.config.ts` are mounted into the container,
+and the Next.js dev server proxies `/ws` to `mock-server` itself. Stop it with
+`docker-compose --profile dev down`.
 
 ### Locally (optional, Node.js 22.12+)
 
 ```sh
 npm ci
 npm run dev:mock      # telemetry source on port 4000
-npm run dev           # in a second terminal; Vite proxies /ws to localhost:4000
+npm run dev           # in a second terminal; Next.js proxies /ws to localhost:4000
 ```
 
-Set `WS_PROXY_TARGET` to point the development proxy somewhere else.
+Set `WS_PROXY_TARGET` to point the development proxy somewhere else. The proxy exists in development
+only: production traffic reaches `/ws` through the nginx edge.
 
 ### Scripts
 
 | Script                  | Description                                               |
 | ----------------------- | --------------------------------------------------------- |
-| `npm run dev`           | Vite dev server                                           |
+| `npm run dev`           | Next.js dev server on port 5173                           |
 | `npm run dev:mock`      | Mock server with reload                                   |
-| `npm run build`         | Type-check and production build to `dist/`                |
+| `npm run build`         | Type-check and production build (standalone, `.next/`)    |
 | `npm run build:mock`    | Compile the mock server                                   |
-| `npm run preview`       | Serve the production build on port 3000                   |
+| `npm start`             | Next.js production server on port 3001, without the edge  |
+| `npm run typegen`       | Generate the Next.js route types (run by the next two)    |
 | `npm run typecheck`     | TypeScript `strict` check of app, server, Cypress, config |
 | `npm run lint`          | ESLint with zero warnings allowed                         |
 | `npm run format`        | Write Prettier formatting                                 |
@@ -150,15 +157,17 @@ Set `CYPRESS_baseUrl` to run Cypress against another URL.
 
 ```
 .
-├── Dockerfile               # Web image: deps → dev → test → build → runtime (nginx)
-├── docker-compose.yml       # mock-server, web, plus profiles dev, test, e2e
-├── nginx/                   # SPA fallback and /ws proxy
+├── Dockerfile               # App image: deps → dev → test → build → runtime (Next.js standalone)
+├── docker-compose.yml       # mock-server, app, web (edge), plus profiles dev, test, e2e
+├── next.config.ts           # Standalone output, source maps, development-only /ws proxy
+├── nginx/                   # Edge image: /ws goes to the mock server, the rest to the app
 ├── mock-server/             # Telemetry simulator (TypeScript + ws)
 ├── shared/protocol.ts       # Wire types shared by client and server
 ├── cypress/                 # End-to-end specs and shared selectors
 ├── scripts/check-stack.mjs  # Smoke test used by CI: routes, health, telemetry stream
 ├── src/
-│   ├── shell/               # Composition: providers, layout, error boundaries, wiring
+│   ├── app/                 # Next.js App Router: root layout, metadata, page, global styles
+│   ├── shell/               # Dashboard client island: providers, layout, boundaries, wiring
 │   ├── domain/              # Pure logic: filters, sorters, metrics, formatting, chart math
 │   ├── data/                # WebSocket client, message guards, batch scheduler
 │   ├── store/               # Zustand stores, derived visible list, selector hooks
@@ -173,8 +182,11 @@ Set `CYPRESS_baseUrl` to run Cypress against another URL.
 
 ## Architecture at a glance
 
-- **Same-origin WebSocket.** The client connects to `/ws` on whatever host serves it; nginx, or Vite
-  in development, proxies it to the mock server.
+- **Server-rendered shell, one client island.** The layout and page are Server Components. The
+  dashboard is a single client component whose "waiting for data" state is rendered on the server;
+  telemetry starts only after hydration.
+- **Same-origin WebSocket.** The client connects to `/ws` on whatever host serves it; the nginx edge,
+  or the Next.js dev server in development, proxies it to the mock server.
 - **Batched ingestion.** Incoming messages are coalesced (latest value per node) and applied to the
   store at most once per animation frame.
 - **Fine-grained rendering.** Each grid row subscribes only to its own node, so an update re-renders
@@ -192,6 +204,7 @@ in [ARCHITECTURE.md](./ARCHITECTURE.md).
 | --------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Port 3000 or 4000 already in use        | Stop the other process, or change the host side of the port mapping in `docker-compose.yml` |
 | Dashboard shows "Reconnecting"          | Check `docker-compose logs mock-server`; the client retries automatically                   |
+| `502 Bad Gateway` from port 3000        | The edge cannot reach `app`; check `docker-compose logs app` and `docker-compose ps`        |
 | Stale containers after changes          | `docker-compose down`, then `docker-compose up --build`                                     |
 | Cypress image download is slow          | The first `--profile e2e` run pulls the image; later runs reuse it                          |
 | Docker engine does not start on Windows | Enable virtualization in the BIOS and the WSL 2 backend in Docker Desktop                   |
