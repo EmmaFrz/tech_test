@@ -9,6 +9,7 @@ import {
 import { SELECTORS } from '../support/selectors';
 
 const { DOWN, ESC, TAB } = Cypress.Keyboard.Keys;
+const APP_HEADER = 'header:has(h1)';
 
 function openWithKeyboard(index: number): void {
   cy.get(SELECTORS.nodeRowButton).eq(index).as('opener').focus();
@@ -21,6 +22,23 @@ function expectFocusInDrawer(): void {
     expect($focused, 'the focused element').to.have.length(1);
     expect($focused[0]?.closest(SELECTORS.detailDrawer), 'focus inside the drawer').not.to.equal(
       null,
+    );
+  });
+}
+
+function expectPointerReaches(selector: string): void {
+  cy.get(selector).should(($element) => {
+    const element = $element[0];
+    if (element === undefined) {
+      throw new Error(`${selector} is missing`);
+    }
+    const box = element.getBoundingClientRect();
+    const hit = element.ownerDocument.elementFromPoint(
+      (box.left + box.right) / 2,
+      (box.top + box.bottom) / 2,
+    );
+    expect(hit !== null && element.contains(hit), `${selector} receives the pointer`).to.equal(
+      true,
     );
   });
 }
@@ -106,4 +124,47 @@ describe('Detail drawer below 1280 px', () => {
     cy.press(DOWN);
     cy.focused().should('have.text', 'node-0002');
   });
+});
+
+describe('Detail drawer under a wrapped header', () => {
+  for (const [textSize, rootFontSize] of [
+    ['normal text', ''],
+    ['text at 200 %', '200%'],
+  ] as const) {
+    it(`leaves the connection status and Pause usable with ${textSize}`, () => {
+      cy.viewport(375, 900);
+      visitWithTelemetry(makeFleet(3));
+      openWithKeyboard(0);
+
+      cy.document().then((page) => {
+        page.documentElement.style.fontSize = rootFontSize;
+      });
+      cy.get('h1').then(($title) => {
+        cy.contains('button', /^Pause$/).should(($pause) => {
+          const pauseTop = $pause[0]?.getBoundingClientRect().top ?? 0;
+          const titleBottom = $title[0]?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY;
+          expect(pauseTop, 'the header wraps onto a second line').to.be.at.least(titleBottom);
+        });
+      });
+      cy.get(APP_HEADER).then(($header) => {
+        cy.get(SELECTORS.detailDrawer).should(($drawer) => {
+          const headerBottom =
+            $header[0]?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY;
+          expect($drawer[0]?.getBoundingClientRect().top ?? 0).to.be.at.least(headerBottom);
+        });
+      });
+      // Large text makes the page taller than the window; a user scrolls up to the header.
+      cy.get(APP_HEADER).scrollIntoView();
+      expectPointerReaches(SELECTORS.connectionStatus);
+      expectPointerReaches(`${APP_HEADER} button`);
+      cy.contains('button', /^Pause$/).click();
+      cy.contains('button', /^Resume$/).should('be.visible');
+      cy.get(SELECTORS.nodeDetail).focus();
+      pressShiftTab();
+      cy.focused().should('have.text', 'Resume');
+      pressEnter();
+      cy.contains('button', /^Pause$/).should('be.visible');
+      cy.get(SELECTORS.nodeDetail).should('contain.text', 'node-0001');
+    });
+  }
 });

@@ -22,11 +22,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* Positioned against <main>, reaching over the shell's padding to stay flush with the window. */
   .detail {
-    position: fixed;
-    inset: calc(var(--size-header) + var(--space-4)) 0 0 auto;
+    position: absolute;
+    inset: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) auto;
     z-index: 20;
-    width: min(100%, var(--detail-width));
+    width: min(100% + 2 * var(--space-4), var(--detail-width));
     padding: var(--space-4);
     background: var(--color-background);
     box-shadow: var(--shadow-raised);
@@ -46,8 +47,8 @@
   }
 
   .backdrop[data-open='true'] {
-    position: fixed;
-    inset: calc(var(--size-header) + var(--space-4)) 0 0;
+    position: absolute;
+    inset: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
     z-index: 10;
     display: block;
     border: 0;
