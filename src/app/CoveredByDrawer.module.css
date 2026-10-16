@@ -1,0 +1,4 @@
+/* A wrapper for inertness only: its children keep their place in the surrounding layout. */
+.covered {
+  display: contents;
+}

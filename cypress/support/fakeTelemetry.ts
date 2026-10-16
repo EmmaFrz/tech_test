@@ -95,6 +95,32 @@ async function sendDevToolsCommand(command: string, params: object): Promise<voi
   await Cypress.automation('remote:debugger:protocol', { command, params });
 }
 
+/** `cy.press(ENTER)` sends no character, which Chromium needs to activate the focused button. */
+export function pressEnter(): void {
+  const key = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 };
+  cy.then(async () => {
+    await sendDevToolsCommand('Input.dispatchKeyEvent', { ...key, type: 'keyDown', text: '\r' });
+    await sendDevToolsCommand('Input.dispatchKeyEvent', { ...key, type: 'keyUp' });
+  });
+}
+
+/** `cy.press` takes no modifiers, so Shift+Tab goes through the DevTools protocol. */
+export function pressShiftTab(): void {
+  const shiftModifier = 8;
+  const shift = { key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 };
+  const tab = { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: shiftModifier };
+  cy.then(async () => {
+    await sendDevToolsCommand('Input.dispatchKeyEvent', {
+      ...shift,
+      type: 'rawKeyDown',
+      modifiers: shiftModifier,
+    });
+    await sendDevToolsCommand('Input.dispatchKeyEvent', { ...tab, type: 'rawKeyDown' });
+    await sendDevToolsCommand('Input.dispatchKeyEvent', { ...tab, type: 'keyUp' });
+    await sendDevToolsCommand('Input.dispatchKeyEvent', { ...shift, type: 'keyUp', modifiers: 0 });
+  });
+}
+
 /** Emulates `prefers-reduced-motion: reduce` until `resetReducedMotion` runs. */
 export function emulateReducedMotion(): void {
   cy.then(() =>

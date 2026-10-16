@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import type { ReactElement } from 'react';
+import type { ReactElement, Ref } from 'react';
 
 import { useSelectedNodeId, useUiActions } from '@/store';
 import { Button, EmptyState, Panel } from '@/ui';
@@ -8,7 +8,12 @@ import { Button, EmptyState, Panel } from '@/ui';
 import { SelectedNodeDetail } from './SelectedNodeDetail';
 import { useEscapeKey } from './useEscapeKey';
 
-export function NodeDetailPanel(): ReactElement {
+export interface NodeDetailPanelProps {
+  /** The panel region, which takes programmatic focus while a node is selected. */
+  readonly ref?: Ref<HTMLElement>;
+}
+
+export function NodeDetailPanel({ ref }: NodeDetailPanelProps): ReactElement {
   const selectedNodeId = useSelectedNodeId();
   const { selectNode } = useUiActions();
   const handleClose = useCallback(() => selectNode(null), [selectNode]);
@@ -17,7 +22,7 @@ export function NodeDetailPanel(): ReactElement {
 
   if (selectedNodeId === null) {
     return (
-      <Panel title="Node details" data-testid="node-detail">
+      <Panel ref={ref} title="Node details" data-testid="node-detail">
         <EmptyState
           title="No node selected"
           description="Choose a row to inspect its live telemetry."
@@ -28,7 +33,9 @@ export function NodeDetailPanel(): ReactElement {
 
   return (
     <Panel
+      ref={ref}
       title={selectedNodeId}
+      tabIndex={-1}
       data-testid="node-detail"
       actions={
         <Button variant="ghost" onClick={handleClose}>

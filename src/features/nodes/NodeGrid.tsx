@@ -1,7 +1,14 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
-import type { FocusEvent, KeyboardEvent, ReactElement } from 'react';
+import type { FocusEvent, KeyboardEvent, ReactElement, Ref } from 'react';
 
 import { useHasNodes, useSelectedNodeId, useUiActions, useVisibleNodeIds } from '@/store';
 import { EmptyState } from '@/ui';
@@ -17,11 +24,20 @@ const HEADER_ROW_COUNT = 1;
 
 const COLUMNS = ['Node', 'Status', 'CPU', 'Memory', 'Latency', 'Updated (UTC)'] as const;
 
+export interface NodeGridHandle {
+  /** Focuses the row of `nodeId`, scrolling it into view, or the grid when it is not listed. */
+  readonly focusNode: (nodeId: string) => void;
+}
+
+export interface NodeGridProps {
+  readonly ref?: Ref<NodeGridHandle>;
+}
+
 function isFocusLost(): boolean {
   return document.activeElement === null || document.activeElement === document.body;
 }
 
-export function NodeGrid(): ReactElement {
+export function NodeGrid({ ref }: NodeGridProps): ReactElement {
   const nodeIds = useVisibleNodeIds();
   const hasNodes = useHasNodes();
   const selectedNodeId = useSelectedNodeId();
@@ -54,6 +70,30 @@ export function NodeGrid(): ReactElement {
     gapIndex.current = -1;
     setActiveNodeId(nodeId);
   }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusNode: (nodeId) => {
+        const index = nodeIds.indexOf(nodeId);
+        if (index === -1) {
+          gapIndex.current = 0;
+          gridRef.current?.focus({ preventScroll: true });
+          return;
+        }
+
+        virtualizer.scrollToIndex(index);
+        const button = document.getElementById(nodeButtonId(nodeId));
+        if (button === null) {
+          pendingFocusId.current = nodeId;
+          setActiveNodeId(nodeId);
+          return;
+        }
+        button.focus({ preventScroll: true });
+      },
+    }),
+    [nodeIds, virtualizer],
+  );
 
   // A removed row takes its focus with it, and a row React moves can lose it in some browsers.
   // Give it back to the same row, or to the grid when the row is gone, so arrow keys keep working.

@@ -32,14 +32,17 @@
     box-shadow: var(--shadow-raised);
     transform: translateX(100%);
     visibility: hidden;
+    /* Hidden only once the slide-out ends. */
     transition:
       transform var(--duration-normal) var(--easing-standard),
-      visibility var(--duration-normal);
+      visibility 0s var(--duration-normal);
   }
 
+  /* Visible at once when opened: a visibility transition would still be hidden when focus moves in. */
   .detail[data-open='true'] {
     transform: none;
     visibility: visible;
+    transition: transform var(--duration-normal) var(--easing-standard);
   }
 
   .backdrop[data-open='true'] {

@@ -4,5 +4,6 @@ export const SELECTORS = {
   nodeRow: '[data-testid="node-row"]',
   nodeRowButton: '[data-testid="node-row"] button',
   nodeDetail: '[data-testid="node-detail"]',
+  detailDrawer: 'aside[aria-label="Node details"]',
   telemetryChart: '[data-testid="telemetry-chart"]',
 } as const;
