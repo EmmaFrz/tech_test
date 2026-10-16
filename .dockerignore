@@ -19,6 +19,8 @@ agents
 .github/prompts
 **/node_modules
 **/dist
+**/.next
+**/next-env.d.ts
 coverage
 cypress/videos
 cypress/screenshots

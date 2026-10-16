@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 
 import js from '@eslint/js';
+import nextPlugin from '@next/eslint-plugin-next';
 import prettier from 'eslint-config-prettier';
 import importPlugin from 'eslint-plugin-import';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
@@ -27,6 +28,8 @@ export default tseslint.config(
       '.local/**',
       '**/node_modules/**',
       '**/dist/**',
+      '.next/**',
+      'next-env.d.ts',
       'coverage/**',
       'cypress/videos/**',
       'cypress/screenshots/**',
@@ -105,6 +108,7 @@ export default tseslint.config(
       ],
     },
   },
+  { files: ['src/**/*.{ts,tsx}'], ...nextPlugin.configs['core-web-vitals'] },
   {
     files: ['src/{domain,data,lib}/**/*.{ts,tsx}', 'shared/**/*.ts', 'mock-server/**/*.ts'],
     rules: {
@@ -122,7 +126,10 @@ export default tseslint.config(
       ],
     },
   },
-  { files: ['*.config.ts'], rules: { 'import/no-default-export': 'off' } },
+  {
+    files: ['*.config.ts', 'src/app/**/{page,layout,not-found,error}.tsx'],
+    rules: { 'import/no-default-export': 'off' },
+  },
   { files: ['src/lib/logger.ts'], rules: { 'no-console': 'off' } },
   { files: ['**/*.test.{ts,tsx}'], rules: { 'import/no-restricted-paths': 'off' } },
   prettier,

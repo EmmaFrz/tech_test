@@ -11,13 +11,14 @@
     "mock-server"
   ],
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "next dev --hostname 0.0.0.0 --port 5173",
     "dev:mock": "npm run dev --workspace mock-server",
-    "build": "tsc -p tsconfig.app.json && vite build",
+    "build": "next build",
     "build:mock": "npm run build --workspace mock-server",
-    "preview": "vite preview --host 0.0.0.0 --port 3000 --strictPort",
-    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p mock-server/tsconfig.json && tsc -p cypress/tsconfig.json",
-    "lint": "eslint . --max-warnings 0",
+    "start": "next start --hostname 0.0.0.0 --port 3001",
+    "typegen": "next typegen",
+    "typecheck": "npm run typegen && tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p mock-server/tsconfig.json && tsc -p cypress/tsconfig.json",
+    "lint": "npm run typegen && eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest",
@@ -28,12 +29,14 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "3.14.21",
+    "next": "16.4.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "zustand": "5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@next/eslint-plugin-next": "16.4.2",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
     "@types/node": "22.20.5",

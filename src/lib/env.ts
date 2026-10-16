@@ -6,4 +6,4 @@ export function resolveTelemetryUrl(location: Pick<Location, 'protocol' | 'host'
   return `${scheme}//${location.host}${TELEMETRY_PATH}`;
 }
 
-export const IS_DEVELOPMENT: boolean = import.meta.env.DEV;
+export const IS_DEVELOPMENT: boolean = process.env.NODE_ENV !== 'production';
