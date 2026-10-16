@@ -90,6 +90,50 @@ describe('historyStore', () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it('skips an older sample in an update instead of restarting the history', () => {
+    const history = createHistoryStore();
+    history.record([makeNode({ timestamp: TEST_TIMESTAMP + 10, cpuLoad: 50 })]);
+
+    history.record([makeNode({ timestamp: TEST_TIMESTAMP, cpuLoad: 99 })], 'update');
+
+    expect(history.getSamples('node-0001').map((sample) => sample.cpuLoad)).toEqual([50]);
+  });
+
+  describe('snapshots', () => {
+    it('restart a history whose clock they move backwards', () => {
+      const history = createHistoryStore();
+      history.record([makeNode({ timestamp: TEST_TIMESTAMP + 10, cpuLoad: 50 })]);
+
+      history.record([makeNode({ timestamp: TEST_TIMESTAMP, cpuLoad: 20 })], 'snapshot');
+
+      expect(history.getSamples('node-0001')).toEqual([
+        { timestamp: TEST_TIMESTAMP, cpuLoad: 20, memoryUsage: 50, latencyMs: 120 },
+      ]);
+    });
+
+    it('continue a history whose clock they move forwards', () => {
+      const history = createHistoryStore();
+      history.record([makeNode({ timestamp: TEST_TIMESTAMP })]);
+
+      history.record([makeNode({ timestamp: TEST_TIMESTAMP + 10 })], 'snapshot');
+
+      expect(history.getSamples('node-0001')).toHaveLength(2);
+    });
+
+    it('drop the history of every node they no longer list and tell its subscribers', () => {
+      const history = createHistoryStore();
+      history.record([makeNode({ nodeId: 'kept' }), makeNode({ nodeId: 'removed' })]);
+      const removed = vi.fn();
+      history.subscribe('removed', removed);
+
+      history.record([makeNode({ nodeId: 'kept' })], 'snapshot');
+
+      expect(history.getSamples('removed')).toEqual([]);
+      expect(history.getSamples('kept')).toHaveLength(1);
+      expect(removed).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('clears samples and tells subscribers', () => {
     const history = createHistoryStore();
     const listener = vi.fn();

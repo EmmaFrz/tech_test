@@ -115,7 +115,7 @@ export function createTelemetryStore(
                 false,
                 'applySnapshot',
               );
-              history.record(nodes);
+              history.record(nodes, 'snapshot');
             },
             applyBatch: (batch) => {
               if (get().paused) {

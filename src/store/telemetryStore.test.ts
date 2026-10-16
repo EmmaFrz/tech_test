@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { HistoryStore } from './historyStore';
 import type { TelemetryStore } from './telemetryStore';
 
 import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
 
+import { createHistoryStore } from './historyStore';
 import { selectFleetMetrics, selectStatusCounts } from './selectors';
 import { createTelemetryStore } from './telemetryStore';
 
@@ -45,12 +47,12 @@ describe('telemetryStore', () => {
       expect(store.getState().byId['node-0001']?.latencyMs).toBe(120);
     });
 
-    it('records the snapshot nodes in the history', () => {
+    it('records the snapshot nodes in the history as a full fleet', () => {
       const nodes = makeNodes(2);
 
       store.getState().actions.applySnapshot(nodes, 1);
 
-      expect(record).toHaveBeenCalledWith(nodes);
+      expect(record).toHaveBeenCalledWith(nodes, 'snapshot');
     });
   });
 
@@ -217,5 +219,106 @@ describe('telemetryStore', () => {
       expect(Object.getPrototypeOf(store.getState().byId)).toBeNull();
       expect(store.getState().byId['node-0002']?.latencyMs).toBe(400);
     });
+  });
+});
+
+describe('telemetryStore with a real history', () => {
+  let history: HistoryStore;
+  let store: TelemetryStore;
+
+  function cpuHistory(nodeId = 'node-0001'): number[] {
+    return history.getSamples(nodeId).map((sample) => sample.cpuLoad);
+  }
+
+  beforeEach(() => {
+    history = createHistoryStore();
+    store = createTelemetryStore(history);
+  });
+
+  it('continues a history across an ordinary reconnect', () => {
+    const { actions } = store.getState();
+    actions.applySnapshot([makeNode({ timestamp: 1_000, cpuLoad: 10 })], 1);
+    actions.applyBatch(batch([makeNode({ timestamp: 2_000, cpuLoad: 20 })]));
+
+    actions.applySnapshot([makeNode({ timestamp: 3_000, cpuLoad: 30 })], 2);
+
+    expect(cpuHistory()).toEqual([10, 20, 30]);
+  });
+
+  it('does not duplicate the sample of a node that stayed silent across a reconnect', () => {
+    const { actions } = store.getState();
+    actions.applySnapshot([makeNode({ timestamp: 1_000, cpuLoad: 10 })], 1);
+
+    actions.applySnapshot([makeNode({ timestamp: 1_000, cpuLoad: 10 })], 2);
+
+    expect(cpuHistory()).toEqual([10]);
+  });
+
+  it('restarts a history when a replacement snapshot moves its clock backwards', () => {
+    const { actions } = store.getState();
+    actions.applySnapshot([makeNode({ timestamp: 20_000, cpuLoad: 90 })], 1);
+
+    actions.applySnapshot([makeNode({ timestamp: 10_000, cpuLoad: 25 })], 2);
+    actions.applyBatch(batch([makeNode({ timestamp: 11_000, cpuLoad: 30 })]));
+
+    expect(store.getState().byId['node-0001']?.cpuLoad).toBe(30);
+    expect(cpuHistory()).toEqual([25, 30]);
+  });
+
+  it('drops the history of nodes a replacement snapshot no longer lists', () => {
+    const { actions } = store.getState();
+    actions.applySnapshot([makeNode({ nodeId: 'old-node' })], 1);
+
+    actions.applySnapshot([makeNode({ nodeId: 'new-node' })], 2);
+
+    expect(history.getSamples('old-node')).toEqual([]);
+    expect(history.getSamples('new-node')).toHaveLength(1);
+  });
+
+  it('notifies the subscribers of nodes whose history a snapshot dropped or restarted', () => {
+    const { actions } = store.getState();
+    actions.applySnapshot(
+      [
+        makeNode({ nodeId: 'dropped', timestamp: 5_000 }),
+        makeNode({ nodeId: 'rolled-back', timestamp: 5_000 }),
+        makeNode({ nodeId: 'unchanged', timestamp: 5_000 }),
+      ],
+      1,
+    );
+    const dropped = vi.fn();
+    const rolledBack = vi.fn();
+    const unchanged = vi.fn();
+    history.subscribe('dropped', dropped);
+    history.subscribe('rolled-back', rolledBack);
+    history.subscribe('unchanged', unchanged);
+
+    actions.applySnapshot(
+      [
+        makeNode({ nodeId: 'rolled-back', timestamp: 4_000 }),
+        makeNode({ nodeId: 'unchanged', timestamp: 5_000 }),
+      ],
+      2,
+    );
+
+    expect(dropped).toHaveBeenCalledTimes(1);
+    expect(rolledBack).toHaveBeenCalledTimes(1);
+    expect(unchanged).not.toHaveBeenCalled();
+  });
+
+  it('keeps the history consistent across pause, a replacement snapshot and resume', () => {
+    const { actions } = store.getState();
+    actions.applySnapshot([makeNode({ timestamp: 20_000, cpuLoad: 90 })], 1);
+    actions.pause();
+    actions.applyBatch(batch([makeNode({ timestamp: 21_000, cpuLoad: 95 })]));
+
+    actions.applySnapshot([makeNode({ timestamp: 10_000, cpuLoad: 25 })], 2);
+    expect(cpuHistory()).toEqual([25]);
+    actions.applyBatch(batch([makeNode({ timestamp: 11_000, cpuLoad: 35 })]));
+    expect(cpuHistory()).toEqual([25]);
+
+    actions.resume();
+
+    expect(store.getState().byId['node-0001']?.cpuLoad).toBe(35);
+    expect(cpuHistory()).toEqual([25, 35]);
   });
 });
