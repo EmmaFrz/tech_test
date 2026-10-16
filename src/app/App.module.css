@@ -11,6 +11,7 @@
 
 .header {
   display: flex;
+  min-height: var(--size-header);
   flex-wrap: wrap;
   gap: var(--space-4);
   align-items: center;

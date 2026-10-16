@@ -24,7 +24,7 @@
 
   .detail {
     position: fixed;
-    inset: 0 0 0 auto;
+    inset: calc(var(--size-header) + var(--space-4)) 0 0 auto;
     z-index: 20;
     width: min(100%, var(--detail-width));
     padding: var(--space-4);
@@ -44,7 +44,7 @@
 
   .backdrop[data-open='true'] {
     position: fixed;
-    inset: 0;
+    inset: calc(var(--size-header) + var(--space-4)) 0 0;
     z-index: 10;
     display: block;
     border: 0;
