@@ -11,7 +11,8 @@ services:
       TICK_MS: '${TICK_MS:-100}'
       UPDATE_RATIO: '${UPDATE_RATIO:-0.3}'
       SEED: '${SEED:-42}'
-      FORCE_CRITICAL: '${FORCE_CRITICAL:-3}'
+      # Empty when unset, so the server applies its own default: 3, or every node of a smaller fleet.
+      FORCE_CRITICAL: '${FORCE_CRITICAL:-}'
       DROPOUT_RATIO: '${DROPOUT_RATIO:-0.01}'
       LOG_LEVEL: '${LOG_LEVEL:-info}'
     healthcheck:
