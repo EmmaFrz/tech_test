@@ -27,6 +27,8 @@ export default tseslint.config(
       '.local/**',
       '**/node_modules/**',
       '**/dist/**',
+      '.next/**',
+      'next-env.d.ts',
       'coverage/**',
       'cypress/videos/**',
       'cypress/screenshots/**',
