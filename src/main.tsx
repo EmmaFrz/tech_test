@@ -1,11 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { App } from '@/app/App';
-import { TelemetryProvider } from '@/app/TelemetryProvider';
+import { Dashboard } from '@/shell/Dashboard';
 
 import '@/ui/tokens.css';
-import '@/app/global.css';
+import '@/shell/global.css';
 
 const rootElement = document.getElementById('root');
 
@@ -15,8 +14,6 @@ if (rootElement === null) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <TelemetryProvider>
-      <App />
-    </TelemetryProvider>
+    <Dashboard />
   </StrictMode>,
 );

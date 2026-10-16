@@ -84,7 +84,8 @@ export function createTelemetryStore(
         return {
           byId: {},
           epoch: 0,
-          connection: 'offline',
+          // The server-rendered shell must not claim the link is lost before a connection is tried.
+          connection: 'connecting',
           lastMessageAt: null,
           serverTime: null,
           paused: false,

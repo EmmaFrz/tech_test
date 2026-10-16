@@ -54,7 +54,7 @@ WebSocket ─▶ TelemetryClient ─▶ decodeServerMessage (guards)
  its own node changes        by every subscriber          at most once per second on data changes
 ```
 
-The wiring lives in `src/app/startTelemetry.ts`; every other module only knows its neighbours.
+The wiring lives in `src/shell/startTelemetry.ts`; every other module only knows its neighbours.
 
 ## Layers and dependency rules
 
@@ -67,7 +67,7 @@ The wiring lives in `src/app/startTelemetry.ts`; every other module only knows i
 | `store/`    | Zustand stores, derived list, selector hooks                          | `domain`, `lib`, `shared`      |
 | `ui/`       | Design tokens and accessible primitives                               | `lib`                          |
 | `features/` | `overview`, `nodes`, `node-detail`, `connection`                      | `store`, `domain`, `ui`, `lib` |
-| `app/`      | Composition: providers, layout, error boundaries, telemetry wiring    | everything                     |
+| `shell/`    | Composition: providers, layout, error boundaries, telemetry wiring    | everything                     |
 
 ESLint enforces these with `import/no-restricted-paths`; features additionally can only reach each
 other through an `index.ts`. React is banned from `domain`, `data`, `lib` and `shared` by a separate
@@ -144,7 +144,7 @@ controls, meters expose `role="meter"` with values, and every animation respects
 
 ## Performance
 
-**Render budget (automated).** `src/app/renderBudget.test.tsx` drives the real pipeline with a fake
+**Render budget (automated).** `src/shell/renderBudget.test.tsx` drives the real pipeline with a fake
 socket and a manual animation-frame clock and asserts that 60 messages in one frame produce exactly
 one React commit, that three updated nodes re-render three rows (not the whole window), that a
 heartbeat-only frame re-renders no row, and that untouched nodes keep their object reference.

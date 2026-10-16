@@ -158,7 +158,7 @@ Set `CYPRESS_baseUrl` to run Cypress against another URL.
 ├── cypress/                 # End-to-end specs and shared selectors
 ├── scripts/check-stack.mjs  # Smoke test used by CI: routes, health, telemetry stream
 ├── src/
-│   ├── app/                 # Composition: providers, layout, error boundaries, wiring
+│   ├── shell/               # Composition: providers, layout, error boundaries, wiring
 │   ├── domain/              # Pure logic: filters, sorters, metrics, formatting, chart math
 │   ├── data/                # WebSocket client, message guards, batch scheduler
 │   ├── store/               # Zustand stores, derived visible list, selector hooks

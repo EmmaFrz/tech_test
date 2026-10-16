@@ -26,7 +26,7 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Fleet Ops' })).toBeVisible();
     expect(screen.getByRole('main')).toBeInTheDocument();
-    expect(screen.getByTestId('connection-status')).toHaveAttribute('data-state', 'offline');
+    expect(screen.getByTestId('connection-status')).toHaveAttribute('data-state', 'connecting');
     expect(screen.getByRole('region', { name: 'Fleet overview' })).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Node filters' })).toBeInTheDocument();
     expect(screen.getByTestId('node-grid')).toHaveTextContent('Waiting for telemetry');

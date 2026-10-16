@@ -12,7 +12,7 @@ export const layerZones = [
   { target: './src/ui', from: './src', except: ['./ui', './lib'] },
   { target: './src/data', from: './src', except: ['./data', './domain', './lib'] },
   { target: './src/store', from: './src', except: ['./store', './domain', './lib'] },
-  { target: './src/features', from: ['./src/app', './src/data'] },
+  { target: './src/features', from: ['./src/shell', './src/data'] },
   { target: './shared', from: ['./src', './mock-server'] },
   { target: './mock-server', from: './src' },
   { target: './src', from: './mock-server' },

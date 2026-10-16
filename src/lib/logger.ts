@@ -12,6 +12,10 @@ export interface Logger {
 export const DEBUG_STORAGE_KEY = 'fleetops:debug';
 
 function readEnabledNamespaces(): readonly string[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
   try {
     const raw = window.localStorage.getItem(DEBUG_STORAGE_KEY);
     return raw === null ? [] : raw.split(',').map((namespace) => namespace.trim());

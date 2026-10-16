@@ -1,3 +1,5 @@
+// The stores are module singletons, so a server process shares them between requests. They are
+// written only from effects and event handlers, which never run while rendering on the server.
 export {
   useConnectionState,
   useCriticalCount,

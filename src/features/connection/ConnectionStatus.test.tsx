@@ -21,8 +21,8 @@ describe('ConnectionStatus', () => {
   it('reports the connection state and that no data has arrived yet', () => {
     render(<ConnectionStatus />);
 
-    expect(screen.getByTestId('connection-status')).toHaveAttribute('data-state', 'offline');
-    expect(screen.getByRole('status')).toHaveTextContent('Offline');
+    expect(screen.getByTestId('connection-status')).toHaveAttribute('data-state', 'connecting');
+    expect(screen.getByRole('status')).toHaveTextContent('Connecting');
     expect(screen.getByText('waiting for data')).toBeVisible();
   });
 

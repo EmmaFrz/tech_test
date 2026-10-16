@@ -4,6 +4,7 @@ import { createLogger, DEBUG_STORAGE_KEY } from './logger';
 
 describe('createLogger', () => {
   afterEach(() => {
+    vi.unstubAllGlobals();
     window.localStorage.removeItem(DEBUG_STORAGE_KEY);
   });
 
@@ -25,6 +26,15 @@ describe('createLogger', () => {
 
     expect(debug).toHaveBeenCalledTimes(1);
     expect(debug).toHaveBeenCalledWith('[ws] shown');
+  });
+
+  it('keeps debug output off, without throwing, where there is no window', () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    vi.stubGlobal('window', undefined);
+
+    createLogger('ws').debug('rendered on a server');
+
+    expect(debug).not.toHaveBeenCalled();
   });
 
   it('enables every namespace with a wildcard', () => {

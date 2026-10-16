@@ -95,6 +95,8 @@ export function useNodeHistory(nodeId: string | null): readonly HistorySample[] 
   return useSyncExternalStore(
     nodeId === null ? subscribeToNothing : (listener) => historyStore.subscribe(nodeId, listener),
     () => (nodeId === null ? NO_SAMPLES : historyStore.getSamples(nodeId)),
+    // History is recorded in the browser only; the server and the hydration pass render it empty.
+    () => NO_SAMPLES,
   );
 }
 
