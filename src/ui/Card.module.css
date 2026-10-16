@@ -1,0 +1,23 @@
+.card {
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  transition:
+    border-color var(--duration-normal) var(--easing-standard),
+    background-color var(--duration-normal) var(--easing-standard);
+}
+
+.neutral {
+  border-color: var(--color-border);
+}
+
+.warning {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-surface);
+}
+
+.alert {
+  border-color: var(--color-critical-border);
+  background: var(--color-critical-surface);
+}

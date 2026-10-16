@@ -7,7 +7,7 @@ body {
   background: var(--color-background);
   color: var(--color-text);
   font-family: var(--font-family);
-  font-size: var(--font-body);
+  font-size: var(--font-size-md);
   font-variant-numeric: tabular-nums;
   line-height: var(--line-height-body);
 }

@@ -20,7 +20,7 @@
 
 .caption {
   color: var(--color-muted);
-  font-size: var(--font-small);
+  font-size: var(--font-size-sm);
 }
 
 .placeholder {
@@ -30,12 +30,12 @@
   padding: var(--space-8);
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-lg);
 }
 
 .eyebrow {
   color: var(--color-accent);
-  font-size: var(--font-small);
+  font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: var(--letter-spacing-label);
   text-transform: uppercase;
@@ -43,8 +43,8 @@
 
 .placeholder h1 {
   max-width: var(--text-width);
-  font-size: var(--font-title);
-  line-height: var(--line-height-title);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
 }
 
 .description {
@@ -55,5 +55,5 @@
 .status {
   padding-top: var(--space-6);
   border-top: var(--border-width) solid var(--color-border);
-  font-size: var(--font-small);
+  font-size: var(--font-size-sm);
 }

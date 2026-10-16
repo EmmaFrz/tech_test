@@ -1,0 +1,27 @@
+.track {
+  width: var(--size-meter-width);
+  height: var(--size-meter-height);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-meter-track);
+}
+
+.fill {
+  width: var(--value);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--meter-color);
+  transition: width var(--duration-fast) var(--easing-standard);
+}
+
+.ok {
+  --meter-color: var(--color-ok);
+}
+
+.warning {
+  --meter-color: var(--color-warning);
+}
+
+.critical {
+  --meter-color: var(--color-critical);
+}
