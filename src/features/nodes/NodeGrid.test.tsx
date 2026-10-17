@@ -115,6 +115,18 @@ describe('NodeGrid', () => {
     expect(screen.getByRole('button', { name: 'node-0004' })).toHaveFocus();
   });
 
+  it('mounts new rows without reading their size from the layout', () => {
+    seedFleet(makeNodes(200));
+    render(<NodeGrid />);
+    const offsetHeight = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get');
+    offsetHeight.mockClear();
+
+    act(() => useUiStore.getState().actions.setSort({ key: 'nodeId', direction: 'desc' }));
+
+    expect(screen.getAllByTestId('node-row')[0]).toHaveAttribute('data-node-id', 'node-0200');
+    expect(offsetHeight).not.toHaveBeenCalled();
+  });
+
   it('shows a no-matches message when the filter excludes every node', () => {
     seedFleet(makeNodes(3));
     render(<NodeGrid />);

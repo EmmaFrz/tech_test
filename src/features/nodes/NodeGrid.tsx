@@ -17,9 +17,10 @@ import { nodeButtonId, resolveNavigationTarget, resolveTargetFromGap } from './g
 import styles from './NodeGrid.module.css';
 import { NodeRow } from './NodeRow';
 
-// Only an estimate: rows are measured, so the real height comes from the design tokens.
+// Only the first estimate: the real row height comes from the design tokens and is observed.
 const ESTIMATED_ROW_HEIGHT_PX = 44;
-const OVERSCAN_ROWS = 8;
+// Rows kept beyond each edge of the viewport. Every reorder or filter change mounts them too.
+const OVERSCAN_ROWS = 4;
 const HEADER_ROW_COUNT = 1;
 
 const COLUMNS = ['Node', 'Status', 'CPU', 'Memory', 'Latency', 'Updated (UTC)'] as const;
@@ -50,6 +51,7 @@ export function NodeGrid({ ref }: NodeGridProps): ReactElement {
   const committedNodeIds = useRef<readonly string[]>([]);
   // The gap a removed focused row left, where the keys continue while the grid holds focus.
   const gapIndex = useRef(-1);
+  const rowHeight = useRef(ESTIMATED_ROW_HEIGHT_PX);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns unmemoizable functions
@@ -59,6 +61,15 @@ export function NodeGrid({ ref }: NodeGridProps): ReactElement {
     estimateSize: () => ESTIMATED_ROW_HEIGHT_PX,
     getItemKey: (index) => nodeIds[index] ?? index,
     overscan: OVERSCAN_ROWS,
+    // Rows all share one height. Reading it from each new row would force a layout in the middle
+    // of React's commit, so a new row takes the height the ResizeObserver last reported.
+    measureElement: (_element, entry) => {
+      const size = entry?.borderBoxSize[0]?.blockSize;
+      if (size !== undefined) {
+        rowHeight.current = Math.round(size);
+      }
+      return rowHeight.current;
+    },
   });
   const virtualItems = virtualizer.getVirtualItems();
   const renderedIds = virtualItems.flatMap((item) => nodeIds[item.index] ?? []);
