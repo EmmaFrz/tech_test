@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SortKey } from './sorters';
 
 import { makeNode } from '@/test/factories';
+import type { NodeTelemetry } from '@shared/protocol';
 
 import { compareNodes, DEFAULT_SORT, SORT_KEYS, sortNodes } from './sorters';
 
@@ -72,6 +73,52 @@ describe('sortNodes', () => {
     sortNodes(nodes, { key: 'nodeId', direction: 'asc' });
 
     expect(nodes.map((node) => node.nodeId)).toEqual(before);
+  });
+});
+
+describe('sortNodes against the reference order of compareNodes', () => {
+  const STATUSES = ['OK', 'WARNING', 'CRITICAL'] as const;
+
+  // Few distinct values and shuffled, unpadded IDs: nearly every comparison is a tie.
+  function tiedFleet(size: number, seed: number): NodeTelemetry[] {
+    let state = seed;
+    const next = (limit: number): number => {
+      state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return state % limit;
+    };
+    const fleet = Array.from({ length: size }, (_, index) =>
+      makeNode({
+        nodeId: `node-${index * 7 + 1}`,
+        status: STATUSES[next(3)] ?? 'OK',
+        cpuLoad: next(4) * 10,
+        memoryUsage: next(3) * 25,
+        latencyMs: 100 + next(5) * 50,
+      }),
+    );
+    return fleet.sort(() => next(3) - 1);
+  }
+
+  it.each(
+    SORT_KEYS.flatMap((key) =>
+      (['asc', 'desc'] as const).map((direction) => [key, direction] as const),
+    ),
+  )('orders a fleet full of ties by %s %s exactly like compareNodes', (key, direction) => {
+    const sort = { key, direction };
+    const fleet = tiedFleet(300, key.length * 31 + direction.length);
+
+    expect(sortNodes(fleet, sort)).toEqual([...fleet].sort(compareNodes(sort)));
+  });
+
+  it('ranks node IDs that only appear after an earlier sort', () => {
+    sortNodes(tiedFleet(50, 7), DEFAULT_SORT);
+    const grown = [
+      ...tiedFleet(50, 7),
+      makeNode({ nodeId: 'node-0', latencyMs: 100 }),
+      makeNode({ nodeId: 'node-1000', latencyMs: 100 }),
+    ];
+    const sort = { key: 'latencyMs', direction: 'asc' } as const;
+
+    expect(sortNodes(grown, sort)).toEqual([...grown].sort(compareNodes(sort)));
   });
 });
 

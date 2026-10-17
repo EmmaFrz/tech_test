@@ -49,6 +49,48 @@ export function compareNodes(
     direction * comparePrimary(sort.key, left, right) || compareNodeIds(left, right);
 }
 
+function primaryValue(key: SortKey, node: NodeTelemetry, idRank: number): number {
+  switch (key) {
+    case 'nodeId':
+      return idRank;
+    case 'status':
+      return STATUS_SEVERITY[node.status];
+    case 'latencyMs':
+      return node.latencyMs;
+    case 'cpuLoad':
+      return node.cpuLoad;
+    case 'memoryUsage':
+      return node.memoryUsage;
+    default:
+      return assertNever(key);
+  }
+}
+
+// Collating IDs dominated sorts with many ties (most nodes share a status or a latency), so the
+// IDs are ranked once and the ranking is reused until IDs it has not seen show up.
+let rankedIds: ReadonlyMap<string, number> = new Map();
+
+function rankNodeIds(nodes: readonly NodeTelemetry[]): ReadonlyMap<string, number> {
+  if (nodes.every((node) => rankedIds.has(node.nodeId))) {
+    return rankedIds;
+  }
+
+  const ids = nodes
+    .map((node) => node.nodeId)
+    .sort((left, right) => NODE_ID_COLLATOR.compare(left, right));
+  rankedIds = new Map(ids.map((id, rank) => [id, rank]));
+  return rankedIds;
+}
+
+/** Same order as `compareNodes`, but it compares precomputed numbers instead of collating IDs. */
 export function sortNodes(nodes: readonly NodeTelemetry[], sort: SortSpec): NodeTelemetry[] {
-  return [...nodes].sort(compareNodes(sort));
+  const ranks = rankNodeIds(nodes);
+  const direction = sort.direction === 'asc' ? 1 : -1;
+  return nodes
+    .map((node) => {
+      const rank = ranks.get(node.nodeId) ?? 0;
+      return { node, rank, value: primaryValue(sort.key, node, rank) };
+    })
+    .sort((left, right) => direction * (left.value - right.value) || left.rank - right.rank)
+    .map((entry) => entry.node);
 }
