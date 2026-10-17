@@ -1,0 +1,76 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == 'main'
+
+containers:
+  image: node:22.23.3-trixie
+  # The stack runs in a Docker-in-Docker service, so its published ports are reached at `docker`.
+  # The classic image store keeps an image while a container uses it, which Compose v1 needs to
+  # recreate a container after a rebuild; fresh Docker 29 daemons use the containerd store.
+  services:
+    - name: docker:29.8.2-dind
+      alias: docker
+      command: ['--tls=false', '--feature', 'containerd-snapshotter=false']
+  timeout: 25 minutes
+  parallel:
+    matrix:
+      - COMPOSE: v1
+        COMPOSE_COMMAND: docker-compose
+      - COMPOSE: v2
+        COMPOSE_COMMAND: docker compose
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ''
+    BIND_ADDRESS: 0.0.0.0
+    STACK_URL: http://docker:3000
+    HEALTH_URL: http://docker:4000/health
+    COMPOSE_API_VERSION: '1.44'
+    COMPOSE_DOCKER_CLI_BUILD: '1'
+    DOCKER_BUILDKIT: '1'
+  before_script:
+    - |
+      curl --fail --location --retry 3 \
+        https://download.docker.com/linux/static/stable/x86_64/docker-29.8.2.tgz \
+        | tar --extract --gzip --directory=/usr/local/bin --strip-components=1 docker/docker
+      mkdir -p /usr/local/lib/docker/cli-plugins
+      curl --fail --location --retry 3 \
+        https://github.com/docker/buildx/releases/download/v0.37.2/buildx-v0.37.2.linux-amd64 \
+        --output /usr/local/lib/docker/cli-plugins/docker-buildx
+      chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+    - |
+      if [ "$COMPOSE" = v1 ]; then
+        curl --fail --location --retry 3 \
+          https://github.com/docker/compose/releases/download/1.29.2/docker-compose-Linux-x86_64 \
+          --output /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+      else
+        curl --fail --location --retry 3 \
+          https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64 \
+          --output /usr/local/lib/docker/cli-plugins/docker-compose
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+      fi
+    - timeout 60 sh -c 'until docker info > /dev/null 2>&1; do sleep 1; done'
+  script:
+    # Build and start
+    - $COMPOSE_COMMAND version
+    - $COMPOSE_COMMAND config --quiet
+    - $COMPOSE_COMMAND up --build --detach
+    - curl --fail --retry 12 --retry-delay 2 --retry-all-errors --max-time 5 "$STACK_URL/"
+    # Check routes, health and proxy
+    - node scripts/check-stack.mjs
+    - test "$($COMPOSE_COMMAND exec -T web id -u)" != 0
+    - test "$($COMPOSE_COMMAND exec -T mock-server id -u)" != 0
+    # Check recovery after the backend is recreated
+    - node scripts/check-backend-replacement.mjs
+    # Run unit tests in Docker
+    - $COMPOSE_COMMAND --profile test run --rm unit
+    # Check development profile, by IP address: the dev server rejects the `docker` host name
+    - DEV_URL="http://$(getent ahostsv4 docker | awk 'NR == 1 { print $1 }'):5173"
+    - $COMPOSE_COMMAND --profile dev up --build --detach web-dev
+    - curl --fail --retry 12 --retry-delay 2 --retry-all-errors --max-time 5 "$DEV_URL/"
+    - STACK_URL="$DEV_URL" node scripts/check-stack.mjs
+    # Run browser tests in Docker
+    - if [ "$COMPOSE" = v2 ]; then $COMPOSE_COMMAND --profile e2e run --rm e2e; fi
+  after_script:
+    - $COMPOSE_COMMAND logs --no-color

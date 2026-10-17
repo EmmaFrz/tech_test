@@ -258,7 +258,9 @@ The web image has the stages `deps → dev → test → build → runtime`; the 
 formatting, lint and type checks, `build` runs the unit tests with coverage thresholds, and
 `runtime` is nginx running as an unprivileged user. The server image builds with `tsc` and runs
 production dependencies only, as a non-root user. Compose uses no `version:` key and only features
-available in v1.28+ and v2. GitHub Actions builds from a clean checkout with Compose v1 and v2,
+available in v1.28+ and v2. Published ports listen on `127.0.0.1` unless `BIND_ADDRESS` says
+otherwise. GitLab CI/CD (`.gitlab-ci.yml`) runs the stack in a Docker-in-Docker service and sets
+`BIND_ADDRESS=0.0.0.0` to reach it. It builds from a clean checkout with Compose v1 and v2,
 checks routes, health and the telemetry stream, recreates the backend on a new address and checks
 that a connected client recovers through nginx (it retries after a rejected handshake, which Node 22
 reports with an `error` event and no `close`), runs the unit tests inside the container, boots

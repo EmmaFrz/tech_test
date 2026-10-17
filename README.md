@@ -139,7 +139,7 @@ Design decisions, trade-offs and the plan for scaling to 10,000+ nodes are in
 3. Run the checks: `npm run format:check`, `npm run lint`, `npm run typecheck` and
    `npm run test:ci`.
 4. Commit with [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
-   `docs:`) and open a pull request. CI builds the stack and runs every test suite.
+   `docs:`) and open a merge request. GitLab CI/CD builds the stack and runs every test suite.
 
 Code, comments and documentation are written in English. More conventions are in
 [ARCHITECTURE.md](./ARCHITECTURE.md#working-conventions).
