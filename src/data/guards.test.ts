@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { computeYMax } from '@/domain/chart';
 import { formatUtcTime } from '@/domain/format';
-import { makeNode, TEST_TIMESTAMP } from '@/test/factories';
+import { computeFleetMetrics } from '@/domain/metrics';
+import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
 
 import {
   decodeServerMessage,
@@ -23,6 +25,9 @@ describe('isNodeTelemetry', () => {
     ['a negative memory usage', makeNode({ memoryUsage: -1 })],
     ['a negative latency', makeNode({ latencyMs: -5 })],
     ['a non-finite latency', makeNode({ latencyMs: Number.POSITIVE_INFINITY })],
+    ['a latency above one hour', makeNode({ latencyMs: 3_600_001 })],
+    ['a latency whose sum overflows', makeNode({ latencyMs: 1e308 })],
+    ['the largest finite latency', makeNode({ latencyMs: Number.MAX_VALUE })],
     ['a string timestamp', { ...makeNode(), timestamp: '2026-01-01' }],
     ['a timestamp beyond what a Date can hold', makeNode({ timestamp: 1e20 })],
     ['a timestamp after year 9999', makeNode({ timestamp: Date.UTC(10_000, 0, 1) })],
@@ -44,6 +49,17 @@ describe('isNodeTelemetry', () => {
 
     expect(isNodeTelemetry(node)).toBe(true);
     expect(formatUtcTime(node.timestamp)).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+
+  it.each([
+    ['no latency', 0],
+    ['a latency of one hour', 3_600_000],
+  ])('accepts %s, which the overview can average and the chart can scale', (_, latencyMs) => {
+    const fleet = makeNodes(10_000, { latencyMs });
+
+    expect(fleet.every(isNodeTelemetry)).toBe(true);
+    expect(computeFleetMetrics(fleet, TEST_TIMESTAMP).averageLatencyMs).toBe(latencyMs);
+    expect(Number.isFinite(computeYMax(fleet, ['latencyMs'], 500))).toBe(true);
   });
 });
 
@@ -68,6 +84,10 @@ describe('isServerMessage', () => {
     [
       'a delta with an unformattable timestamp',
       { type: 'delta', seq: 1, updates: [makeNode({ timestamp: 1e20 })] },
+    ],
+    [
+      'a snapshot with a latency the chart cannot scale',
+      { type: 'snapshot', seq: 1, nodes: [makeNode({ latencyMs: Number.MAX_VALUE })] },
     ],
     ['an array', []],
     ['null', null],
