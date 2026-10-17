@@ -1,5 +1,6 @@
 .field {
   display: inline-flex;
+  max-width: 100%;
 }
 
 .input {

@@ -6,6 +6,7 @@ import {
   pressShiftTab,
   visitWithTelemetry,
 } from '../support/fakeTelemetry';
+import { expectPointerReaches } from '../support/layout';
 import { SELECTORS } from '../support/selectors';
 
 const { DOWN, ESC, TAB } = Cypress.Keyboard.Keys;
@@ -22,23 +23,6 @@ function expectFocusInDrawer(): void {
     expect($focused, 'the focused element').to.have.length(1);
     expect($focused[0]?.closest(SELECTORS.detailDrawer), 'focus inside the drawer').not.to.equal(
       null,
-    );
-  });
-}
-
-function expectPointerReaches(selector: string): void {
-  cy.get(selector).should(($element) => {
-    const element = $element[0];
-    if (element === undefined) {
-      throw new Error(`${selector} is missing`);
-    }
-    const box = element.getBoundingClientRect();
-    const hit = element.ownerDocument.elementFromPoint(
-      (box.left + box.right) / 2,
-      (box.top + box.bottom) / 2,
-    );
-    expect(hit !== null && element.contains(hit), `${selector} receives the pointer`).to.equal(
-      true,
     );
   });
 }

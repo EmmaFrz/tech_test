@@ -33,10 +33,15 @@ export function Workspace(): ReactElement {
   const backdropRef = useRef<HTMLButtonElement>(null);
   const openedForRef = useRef<string | null>(null);
 
-  // The drawer covers the grid that had focus, so focus moves into the drawer.
+  // The drawer covers the grid that had focus, so focus moves into the drawer. When the page
+  // scrolls (narrow window, large text) the drawer's top can sit above the window: show it.
   useEffect(() => {
-    if (isDrawerOpen) {
-      panelRef.current?.focus({ preventScroll: true });
+    const panel = panelRef.current;
+    if (isDrawerOpen && panel !== null) {
+      panel.focus({ preventScroll: true });
+      if (panel.getBoundingClientRect().top < 0) {
+        panel.scrollIntoView({ block: 'start' });
+      }
     }
   }, [isDrawerOpen]);
 

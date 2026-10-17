@@ -9,6 +9,8 @@ import { createMatchMedia } from './layout';
 // run in the node environment, which has no window.
 if (typeof window !== 'undefined') {
   window.matchMedia = createMatchMedia(() => false);
+  // jsdom implements no scrolling; a no-op lets components call it and tests spy on it.
+  Element.prototype.scrollIntoView = () => undefined;
 }
 
 afterEach(cleanup);

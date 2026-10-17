@@ -11,8 +11,10 @@
   overflow-x: clip;
 }
 
+/* Keeps the height of its wrapped lines: when space runs out, the page scrolls instead. */
 .header {
   display: flex;
+  flex-shrink: 0;
   min-height: var(--size-header);
   flex-wrap: wrap;
   gap: var(--space-4);
@@ -28,16 +30,20 @@
 
 .controls {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-4);
   align-items: center;
 }
 
-/* Positions the narrow-screen drawer: it starts below the header, however tall that wraps. */
+/*
+ * Positions the narrow-screen drawer: it starts below the header, however tall that wraps.
+ * Never shorter than its content: when the controls leave the grid less than its minimum, the
+ * page scrolls and the drawer still covers everything below the header.
+ */
 .main {
   position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: var(--space-4);
-  min-height: 0;
 }

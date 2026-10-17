@@ -1,9 +1,15 @@
+/*
+ * Takes the height left below the controls, but at least a usable grid: 16rem, or the window
+ * without the shell's padding when that is shorter. Size containment keeps the virtual canvas and
+ * the detail panel from asking the page for their full content height.
+ */
 .workspace {
   display: grid;
   flex: 1;
   grid-template-columns: minmax(0, 1fr) var(--detail-width);
   gap: var(--space-4);
-  min-height: 0;
+  min-height: min(var(--size-grid-min), 100dvh - 2 * var(--space-4));
+  contain: size;
 }
 
 .detail {

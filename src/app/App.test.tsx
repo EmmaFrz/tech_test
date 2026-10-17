@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MockInstance } from 'vitest';
+
 import { ORDER_REFRESH_MS, useTelemetryStore, useUiStore } from '@/store';
 import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
 import { mockElementLayout, mockNarrowLayout } from '@/test/layout';
@@ -164,6 +166,58 @@ describe('App detail panel focus', () => {
 
       expect(screen.queryByRole('button', { name: 'b' })).not.toBeInTheDocument();
       expect(screen.getByRole('grid')).toHaveFocus();
+    });
+
+    describe('on a page scrolled by large text or a short window', () => {
+      let scrollIntoView: MockInstance<Element['scrollIntoView']>;
+
+      // jsdom has no layout: the matching element sits outside the window, the rest at its origin.
+      function placeOutsideWindow(matches: (element: HTMLElement) => boolean, top: number): void {
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+          this: HTMLElement,
+        ) {
+          return matches(this) ? new DOMRect(0, top, 300, 40) : new DOMRect();
+        });
+      }
+
+      beforeEach(() => {
+        scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
+      });
+
+      it('shows the top of the drawer when the page was scrolled past it', () => {
+        render(<App />);
+        const panel = screen.getByTestId('node-detail');
+        placeOutsideWindow((element) => element === panel, -400);
+
+        openWithKeyboard('node-0002');
+
+        expect(panel).toHaveFocus();
+        expect(scrollIntoView.mock.contexts).toEqual([panel]);
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+      });
+
+      it('brings the row it returns focus to back into the window', () => {
+        render(<App />);
+        openWithKeyboard('node-0002');
+        const row = rowButton('node-0002').closest('[role="row"]');
+        placeOutsideWindow((element) => element === row, window.innerHeight + 100);
+
+        fireEvent.keyDown(document, { key: 'Escape' });
+
+        expect(rowButton('node-0002')).toHaveFocus();
+        expect(scrollIntoView.mock.contexts).toEqual([row]);
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      });
+
+      it('leaves the page where it is when the drawer and the row are in the window', () => {
+        render(<App />);
+
+        openWithKeyboard('node-0002');
+        fireEvent.keyDown(document, { key: 'Escape' });
+
+        expect(rowButton('node-0002')).toHaveFocus();
+        expect(scrollIntoView).not.toHaveBeenCalled();
+      });
     });
 
     it('keeps focus in the header when the drawer is closed from there', () => {

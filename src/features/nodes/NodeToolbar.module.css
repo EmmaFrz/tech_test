@@ -11,4 +11,5 @@
   flex-wrap: wrap;
   gap: var(--space-3);
   align-items: center;
+  max-width: 100%;
 }

@@ -38,6 +38,17 @@ function isFocusLost(): boolean {
   return document.activeElement === null || document.activeElement === document.body;
 }
 
+// The page scrolls when the controls leave the grid little room (narrow window, large text), so
+// focus moved on request must also reach the window, not only the grid's own viewport.
+function focusInWindow(element: HTMLElement): void {
+  element.focus({ preventScroll: true });
+  const target = element.closest('[role="row"]') ?? element;
+  const { top, bottom } = target.getBoundingClientRect();
+  if (top < 0 || bottom > window.innerHeight) {
+    target.scrollIntoView({ block: 'nearest' });
+  }
+}
+
 export function NodeGrid({ ref }: NodeGridProps): ReactElement {
   const nodeIds = useVisibleNodeIds();
   const hasNodes = useHasNodes();
@@ -89,7 +100,9 @@ export function NodeGrid({ ref }: NodeGridProps): ReactElement {
         const index = nodeIds.indexOf(nodeId);
         if (index === -1) {
           gapIndex.current = 0;
-          gridRef.current?.focus({ preventScroll: true });
+          if (gridRef.current !== null) {
+            focusInWindow(gridRef.current);
+          }
           return;
         }
 
@@ -100,7 +113,7 @@ export function NodeGrid({ ref }: NodeGridProps): ReactElement {
           setActiveNodeId(nodeId);
           return;
         }
-        button.focus({ preventScroll: true });
+        focusInWindow(button);
       },
     }),
     [nodeIds, virtualizer],
@@ -126,7 +139,7 @@ export function NodeGrid({ ref }: NodeGridProps): ReactElement {
     const nodeId = pendingFocusId.current;
     const button = nodeId === null ? null : document.getElementById(nodeButtonId(nodeId));
     if (button !== null) {
-      button.focus({ preventScroll: true });
+      focusInWindow(button);
       pendingFocusId.current = null;
     }
   });
