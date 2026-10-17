@@ -107,8 +107,12 @@ against `http://web:3000`. Covered journeys:
    the covered grid stays out of reach, and Pause stays usable when the header wraps.
 4. **Live grid**: keyboard focus survives reorders, filter changes and snapshots, and a node that
    turns critical while filtered out pulses when it appears (except with reduced motion).
+5. **Small windows and large text**: at 375 px with normal and 200 % text, in a short window and
+   with 200 % text on a wide one, every filter, the search and the sort controls stay usable, and
+   the grid stays tall enough to open a row and return to it.
 
-The last two replace the WebSocket with a deterministic in-page source, so they need no server data.
+The last three replace the WebSocket with a deterministic in-page source, so they need no server
+data.
 
 The first run pulls the Cypress image, which is large; later runs reuse it.
 

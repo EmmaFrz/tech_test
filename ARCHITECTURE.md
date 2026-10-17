@@ -36,7 +36,9 @@ server sends one `snapshot`, then a `delta` per tick with only the nodes that re
 The client validates every message with hand-written type guards and drops, logs and counts anything
 malformed instead of letting it reach React. Node timestamps and heartbeat times must be epoch
 milliseconds between 1970 and the end of year 9999: anything else could not be formatted and would
-move the server clock, and so staleness, out of reach.
+move the server clock, and so staleness, out of reach. Latencies must lie between 0 and one hour:
+finite values near `Number.MAX_VALUE` would overflow the fleet average and the chart axis, while an
+hour keeps the latency sum of any fleet exact.
 
 ## Frontend data flow
 
@@ -165,6 +167,10 @@ delay the check.
 - **Layout.** At 1280 px and wider the detail panel sits beside the grid. Below that it becomes a
   drawer positioned against `<main>`, which starts under the header however tall the header wraps
   (narrow widths, larger text, longer labels), so connection status and Pause stay reachable.
+  The status filters, search and sort controls wrap instead of running past the window's edge. The
+  grid takes the height left under them but never less than 16rem (or the window, if shorter):
+  when a narrow or short window, or large text, leaves less, the page scrolls instead. The grid's
+  region uses size containment, so the virtual canvas never asks the page for its full height.
 
 ## Accessibility
 
@@ -183,7 +189,8 @@ the grid is left alone.
 Below 1280 px the open drawer takes focus, and the regions it covers (overview, filters, grid)
 become `inert`, so Tab and Shift+Tab move between the header controls and the drawer only. Closing
 it with Close, Esc or the backdrop returns focus to the node's row, scrolled into view, or to the
-grid when the row has left the list; focus already moved elsewhere stays there.
+grid when the row has left the list; focus already moved elsewhere stays there. When the page
+scrolls, opening the drawer brings its top into the window, and closing it brings the row back.
 
 ## Performance
 
@@ -209,7 +216,8 @@ frames are not vsync-limited, so read the intervals as relative responsiveness r
 budget; the point is that moving from 200 to 5,000 nodes does not produce long tasks.
 
 Those numbers predate the rendering changes made after the code review: a reorder shares the commit
-of its flush, the sort compares precomputed ID ranks instead of collating IDs on every tie, new rows
+of its flush, the sort compares precomputed ID ranks instead of collating IDs on every tie (IDs the
+collator considers equal, such as `node-01` and `node-1`, share a rank and keep their order), new rows
 take the observed row height instead of being measured, the overscan dropped from eight rows per
 edge to four, and the grid follows a filter, sort or search change in a deferred pass. A paired
 comparison against the submitted build (both behind nginx on the same 5,000-node stream, headless
@@ -237,9 +245,12 @@ came earlier (24 ms against 26 ms).
 - **End to end (Cypress against the full stack).** Critical triage and sorting journeys. The mock
   server is seeded and pins `FORCE_CRITICAL` nodes, so critical data always exists. Assertions are
   retry-able, there are no fixed waits, and the Pause control freezes the grid before order- and
-  status-sensitive checks. Two more specs replace the WebSocket with a deterministic in-page source
+  status-sensitive checks. Three more specs replace the WebSocket with a deterministic in-page source
   to check keyboard focus in the drawer and the live grid, the wrapped-header layout at 375 px
-  (normal and 200 % text), and the critical pulse with and without reduced motion.
+  (normal and 200 % text), the critical pulse with and without reduced motion, and that filters,
+  search, sort and a grid with reachable rows survive narrow and short windows and 200 % text.
+- **CI scripts.** The recovery check's reconnecting client is tested against a proxy that rejects
+  handshakes, as nginx does while the backend is away; the Docker build runs it on Node 22.
 
 ## Containers and CI
 
@@ -249,7 +260,8 @@ formatting, lint and type checks, `build` runs the unit tests with coverage thre
 production dependencies only, as a non-root user. Compose uses no `version:` key and only features
 available in v1.28+ and v2. GitHub Actions builds from a clean checkout with Compose v1 and v2,
 checks routes, health and the telemetry stream, recreates the backend on a new address and checks
-that a connected client recovers through nginx, runs the unit tests inside the container, boots
+that a connected client recovers through nginx (it retries after a rejected handshake, which Node 22
+reports with an `error` event and no `close`), runs the unit tests inside the container, boots
 the development profile and, in the Compose v2 job, runs Cypress.
 
 Local leftovers of the Next.js migration branch (`.next/`, `next-env.d.ts`) are ignored by Git,
