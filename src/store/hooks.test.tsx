@@ -11,8 +11,11 @@ import {
   useNodeById,
   useNodeHistory,
   useStatusCounts,
+  useVisibleNodeIds,
 } from './hooks';
 import { useTelemetryStore } from './telemetryStore';
+import { useUiStore } from './uiStore';
+import { ORDER_REFRESH_MS, startVisibleNodesSync, useVisibleNodesStore } from './visibleNodes';
 
 function resetStores(): void {
   useTelemetryStore.setState(useTelemetryStore.getInitialState(), true);
@@ -167,5 +170,66 @@ describe('store hooks', () => {
 
       expect(result.current).toBe(1_300);
     });
+  });
+});
+
+describe('useVisibleNodeIds', () => {
+  let stopSync: () => void;
+  let rendered: (readonly string[])[];
+
+  function renderVisibleIds(): void {
+    renderHook(() => {
+      const ids = useVisibleNodeIds();
+      rendered.push(ids);
+      return ids;
+    });
+  }
+
+  function applyUpdates(...updates: ReturnType<typeof makeNode>[]): void {
+    act(() =>
+      useTelemetryStore.getState().actions.applyBatch({ updates, serverTime: null, receivedAt: 2 }),
+    );
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetStores();
+    useUiStore.setState(useUiStore.getInitialState(), true);
+    useVisibleNodesStore.setState(useVisibleNodesStore.getInitialState(), true);
+    stopSync = startVisibleNodesSync();
+    rendered = [];
+  });
+
+  afterEach(() => {
+    stopSync();
+    vi.useRealTimers();
+  });
+
+  it('renders a sort change first with the list it replaces, then with the new list', () => {
+    act(() => useTelemetryStore.getState().actions.applySnapshot(makeNodes(3), 1));
+    renderVisibleIds();
+    const shown = rendered.at(-1);
+    const renderCount = rendered.length;
+
+    act(() => useUiStore.getState().actions.setSort({ key: 'nodeId', direction: 'desc' }));
+
+    expect(rendered).toHaveLength(renderCount + 2);
+    expect(rendered[renderCount]).toBe(shown);
+    expect(rendered.at(-1)).toEqual(['node-0003', 'node-0002', 'node-0001']);
+  });
+
+  it('renders a telemetry reorder at once, in a single render', () => {
+    act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+    act(() => useTelemetryStore.getState().actions.applySnapshot(makeNodes(3), 1));
+    renderVisibleIds();
+    act(() => {
+      vi.advanceTimersByTime(ORDER_REFRESH_MS);
+    });
+    const renderCount = rendered.length;
+
+    applyUpdates(makeNode({ nodeId: 'node-0003', latencyMs: 900, timestamp: TEST_TIMESTAMP + 1 }));
+
+    expect(rendered).toHaveLength(renderCount + 1);
+    expect(rendered.at(-1)).toEqual(['node-0003', 'node-0001', 'node-0002']);
   });
 });

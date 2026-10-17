@@ -16,13 +16,20 @@ export const ORDER_REFRESH_MS = 1_000;
 
 export interface VisibleNodesState {
   readonly ids: readonly string[];
+  /** The list before the latest filter, sort or search change, until the grid renders the new one. */
+  readonly previousIds: readonly string[];
+  /** Counts filter, sort and search changes, whose list the grid renders in a deferred pass. */
+  readonly queryRevision: number;
 }
 
 export type VisibleNodesStore = UseBoundStore<StoreApi<VisibleNodesState>>;
 
 export function createVisibleNodesStore(): VisibleNodesStore {
   return create<VisibleNodesState>()(
-    devtools(() => ({ ids: [] }), { name: 'visibleNodesStore', enabled: IS_DEVELOPMENT }),
+    devtools(() => ({ ids: [], previousIds: [], queryRevision: 0 }), {
+      name: 'visibleNodesStore',
+      enabled: IS_DEVELOPMENT,
+    }),
   );
 }
 
@@ -72,7 +79,7 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
     }
   }
 
-  function recompute(): void {
+  function recompute(isQueryChange = false): void {
     clearRefreshTimer();
     lastComputedAt = now();
     const { statusFilter, search, sort } = ui.getState();
@@ -81,9 +88,17 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
       search,
       sort,
     });
-    if (!haveSameItems(target.getState().ids, ids)) {
-      target.setState({ ids }, false);
+    const current = target.getState();
+    if (haveSameItems(current.ids, ids)) {
+      return;
     }
+
+    target.setState(
+      isQueryChange
+        ? { ids, previousIds: current.ids, queryRevision: current.queryRevision + 1 }
+        : { ids },
+      false,
+    );
   }
 
   function refreshIfDue(): void {
@@ -119,7 +134,7 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
       state.search !== previous.search ||
       state.sort !== previous.sort
     ) {
-      recompute();
+      recompute(true);
     }
   });
   recompute();

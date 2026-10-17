@@ -120,6 +120,28 @@ describe('startVisibleNodesSync', () => {
     expect(target.getState().ids).toEqual(['node-0001', 'node-0002']);
   });
 
+  it('marks filter, sort and search changes, but not data changes, as query changes', () => {
+    const { actions } = telemetry.getState();
+    actions.applySnapshot(nodesWithLatency(100, 200), 1);
+    const initial = target.getState();
+
+    ui.getState().actions.setSort({ key: 'latencyMs', direction: 'asc' });
+    const sorted = target.getState();
+    vi.advanceTimersByTime(ORDER_REFRESH_MS);
+    actions.applyBatch({
+      updates: [makeNode({ nodeId: 'node-0001', latencyMs: 900, timestamp: TEST_TIMESTAMP + 100 })],
+      serverTime: null,
+      receivedAt: 2,
+    });
+
+    expect(sorted.queryRevision).toBe(initial.queryRevision + 1);
+    expect(sorted.previousIds).toBe(initial.ids);
+    expect(sorted.ids).toEqual(['node-0001', 'node-0002']);
+    expect(target.getState().ids).toEqual(['node-0002', 'node-0001']);
+    expect(target.getState().queryRevision).toBe(sorted.queryRevision);
+    expect(target.getState().previousIds).toBe(sorted.previousIds);
+  });
+
   it('hands a refresh that falls due between data changes to runRefresh', () => {
     stop();
     const handed: (() => void)[] = [];

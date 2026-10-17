@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useDeferredValue, useEffect, useState, useSyncExternalStore } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import type { HistorySample } from './historyStore';
@@ -88,11 +88,20 @@ export function useMillisecondsSinceLastMessage(refreshMs: number): number | nul
 }
 
 /**
- * Not deferred: a reorder must land in the same commit as the flush that caused it. The grid
- * mounts only its visible window, and the search box already writes a deferred value.
+ * A telemetry reorder renders at once, in the commit of the flush that caused it. A filter, sort
+ * or search change renders its list in a deferred pass, so the control responds in the first
+ * frame and the grid follows.
  */
 export function useVisibleNodeIds(): readonly string[] {
-  return useVisibleNodesStore((state) => state.ids);
+  const { ids, previousIds, queryRevision } = useVisibleNodesStore(
+    useShallow((state) => ({
+      ids: state.ids,
+      previousIds: state.previousIds,
+      queryRevision: state.queryRevision,
+    })),
+  );
+  const renderedRevision = useDeferredValue(queryRevision);
+  return renderedRevision === queryRevision ? ids : previousIds;
 }
 
 export function useIsNodeVisible(nodeId: string): boolean {
