@@ -70,6 +70,10 @@ function primaryValue(key: SortKey, node: NodeTelemetry, idRank: number): number
 // IDs are ranked once and the ranking is reused until IDs it has not seen show up.
 let rankedIds: ReadonlyMap<string, number> = new Map();
 
+/**
+ * IDs the collator considers equal (`node-01` and `node-1`, composed and decomposed accents) share
+ * a rank, so they tie as in `compareNodes` and keep their input order.
+ */
 function rankNodeIds(nodes: readonly NodeTelemetry[]): ReadonlyMap<string, number> {
   if (nodes.every((node) => rankedIds.has(node.nodeId))) {
     return rankedIds;
@@ -78,7 +82,16 @@ function rankNodeIds(nodes: readonly NodeTelemetry[]): ReadonlyMap<string, numbe
   const ids = nodes
     .map((node) => node.nodeId)
     .sort((left, right) => NODE_ID_COLLATOR.compare(left, right));
-  rankedIds = new Map(ids.map((id, rank) => [id, rank]));
+  const ranks = new Map<string, number>();
+  let rank = 0;
+  ids.forEach((id, index) => {
+    const previous = ids[index - 1];
+    if (previous !== undefined && NODE_ID_COLLATOR.compare(previous, id) !== 0) {
+      rank += 1;
+    }
+    ranks.set(id, rank);
+  });
+  rankedIds = ranks;
   return rankedIds;
 }
 

@@ -120,6 +120,46 @@ describe('sortNodes against the reference order of compareNodes', () => {
 
     expect(sortNodes(grown, sort)).toEqual([...grown].sort(compareNodes(sort)));
   });
+
+  describe('with distinct IDs that collate equally', () => {
+    // Zero padding and composed against decomposed accents; every node shares the same metrics.
+    const EQUIVALENT_IDS = [
+      'equivalent-1',
+      'node-7',
+      'equivalent-01',
+      'café-2',
+      'equivalent-001',
+      'café-2',
+      'node-3',
+    ];
+    const fleet = EQUIVALENT_IDS.map((nodeId) => makeNode({ nodeId }));
+    const ALL_SORTS = SORT_KEYS.flatMap((key) =>
+      (['asc', 'desc'] as const).map((direction) => ({ key, direction })),
+    );
+
+    it('contains ties for compareNodes to keep in input order', () => {
+      const [first, , third] = fleet;
+      if (first === undefined || third === undefined) {
+        throw new Error('fixture is empty');
+      }
+
+      expect(compareNodes({ key: 'nodeId', direction: 'desc' })(first, third)).toBe(0);
+    });
+
+    it.each(ALL_SORTS)('keeps them in input order when sorting by $key $direction', (sort) => {
+      expect(sortNodes(fleet, sort)).toEqual([...fleet].sort(compareNodes(sort)));
+    });
+
+    it.each(ALL_SORTS)(
+      'does not let an earlier sort decide their order when sorting by $key $direction',
+      (sort) => {
+        sortNodes(fleet, sort);
+        const reordered = [...fleet].reverse();
+
+        expect(sortNodes(reordered, sort)).toEqual([...reordered].sort(compareNodes(sort)));
+      },
+    );
+  });
 });
 
 describe('compareNodes', () => {
