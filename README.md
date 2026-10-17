@@ -50,7 +50,8 @@ machine, set `NEXT_TELEMETRY_DISABLED=1` or run `npx next telemetry disable`.
 
 ### Configure the simulator
 
-Set these variables inline or in a `.env` file next to `docker-compose.yml`:
+Copy [`.env.example`](./.env.example) to `.env` and change what you need, or set the variables
+inline:
 
 | Variable         | Default | Description                                          |
 | ---------------- | ------- | ---------------------------------------------------- |
