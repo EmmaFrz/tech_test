@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { connectThroughProxy } from './proxyClient.mjs';
+
 // Recreates the mock-server container on a new IP address while nginx keeps running, then checks
 // that a client already connected through nginx reconnects and receives a fresh snapshot without
 // an nginx reload. Works on the Compose project of the current directory, whose stack must be up.
@@ -57,36 +59,6 @@ async function isHealthy() {
   }
 }
 
-/** Reconnects after every close, like the dashboard, and counts the snapshots it receives. */
-function connectThroughProxy() {
-  const socketUrl = new URL('/ws', baseUrl);
-  socketUrl.protocol = socketUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-  const client = { snapshots: 0, isStopped: false, socket: null };
-
-  function open() {
-    if (client.isStopped) {
-      return;
-    }
-    const socket = new WebSocket(socketUrl);
-    client.socket = socket;
-    socket.addEventListener('message', (event) => {
-      if (JSON.parse(event.data).type === 'snapshot') {
-        client.snapshots += 1;
-      }
-    });
-    socket.addEventListener('close', () => setTimeout(open, RETRY_DELAY_MS));
-  }
-
-  open();
-  return {
-    snapshots: () => client.snapshots,
-    stop: () => {
-      client.isStopped = true;
-      client.socket?.close();
-    },
-  };
-}
-
 /** Holds the lowest free address on the network, so the next container cannot take it. */
 function holdAddress(network, image) {
   return run('docker', [
@@ -105,7 +77,7 @@ function holdAddress(network, image) {
 
 const webId = await compose('ps', '-q', 'web');
 const original = await inspect(await compose('ps', '-q', 'mock-server'));
-const client = connectThroughProxy();
+const client = connectThroughProxy(baseUrl, RETRY_DELAY_MS);
 const placeholders = [];
 
 try {
