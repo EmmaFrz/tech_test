@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useTelemetryStore, useUiStore } from '@/store';
-import { makeNode, makeNodes } from '@/test/factories';
+import { CRITICAL_PULSE_MS } from '@/domain/criticalEntries';
+import { ORDER_REFRESH_MS, useTelemetryStore, useUiStore } from '@/store';
+import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
 import { mockElementLayout } from '@/test/layout';
 import { resetStores, seedFleet, startVisibleNodes } from '@/test/stores';
+import type { NodeTelemetry } from '@shared/protocol';
 
 import { NodeGrid } from './NodeGrid';
 
@@ -113,6 +115,18 @@ describe('NodeGrid', () => {
     expect(screen.getByRole('button', { name: 'node-0004' })).toHaveFocus();
   });
 
+  it('mounts new rows without reading their size from the layout', () => {
+    seedFleet(makeNodes(200));
+    render(<NodeGrid />);
+    const offsetHeight = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get');
+    offsetHeight.mockClear();
+
+    act(() => useUiStore.getState().actions.setSort({ key: 'nodeId', direction: 'desc' }));
+
+    expect(screen.getAllByTestId('node-row')[0]).toHaveAttribute('data-node-id', 'node-0200');
+    expect(offsetHeight).not.toHaveBeenCalled();
+  });
+
   it('shows a no-matches message when the filter excludes every node', () => {
     seedFleet(makeNodes(3));
     render(<NodeGrid />);
@@ -154,5 +168,184 @@ describe('NodeGrid', () => {
 
     expect(within(screen.getByTestId('node-grid')).getByText('777 ms')).toBeVisible();
     expect(row).toBeInTheDocument();
+  });
+});
+
+describe('NodeGrid during live updates', () => {
+  let stopSync: () => void;
+
+  function applyUpdates(...updates: readonly NodeTelemetry[]): void {
+    act(() =>
+      useTelemetryStore.getState().actions.applyBatch({
+        updates,
+        serverTime: null,
+        receivedAt: Date.now(),
+      }),
+    );
+  }
+
+  function refreshOrder(): void {
+    act(() => {
+      vi.advanceTimersByTime(ORDER_REFRESH_MS);
+    });
+  }
+
+  function button(nodeId: string): HTMLElement {
+    return screen.getByRole('button', { name: nodeId });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockElementLayout({ viewportHeight: 440, rowHeight: 44 });
+    resetStores();
+    stopSync = startVisibleNodes();
+  });
+
+  afterEach(() => {
+    stopSync();
+    vi.useRealTimers();
+  });
+
+  describe('keyboard focus', () => {
+    it('stays in the grid when a reorder moves the focused row out of the window', () => {
+      seedFleet(makeNodes(200));
+      act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+      render(<NodeGrid />);
+      const first = button('node-0001');
+      act(() => first.focus());
+
+      applyUpdates(makeNode({ latencyMs: 1, timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(first).not.toBeInTheDocument();
+      expect(screen.getByRole('grid')).toHaveFocus();
+      fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
+      expect(button('node-0002')).toHaveFocus();
+    });
+
+    it('keeps focus on a row that a reorder moves within the window', () => {
+      seedFleet(makeNodes(5));
+      act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+      render(<NodeGrid />);
+      act(() => button('node-0001').focus());
+
+      applyUpdates(makeNode({ latencyMs: 1, timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(screen.getAllByTestId('node-row').at(-1)).toHaveAttribute('data-node-id', 'node-0001');
+      expect(button('node-0001')).toHaveFocus();
+    });
+
+    it('stays in the grid when the focused node leaves the status filter', () => {
+      seedFleet(['a', 'b', 'c'].map((nodeId) => makeNode({ nodeId, status: 'CRITICAL' })));
+      act(() => useUiStore.getState().actions.setStatusFilter('CRITICAL'));
+      render(<NodeGrid />);
+      act(() => button('b').focus());
+
+      applyUpdates(makeNode({ nodeId: 'b', status: 'OK', timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(screen.queryByRole('button', { name: 'b' })).not.toBeInTheDocument();
+      expect(screen.getByRole('grid')).toHaveFocus();
+      fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowUp' });
+      expect(button('a')).toHaveFocus();
+    });
+
+    it('stays in the grid when a replacement snapshot drops the focused node', () => {
+      seedFleet(makeNodes(3));
+      render(<NodeGrid />);
+      act(() => button('node-0002').focus());
+
+      seedFleet([makeNode({ nodeId: 'node-0001' }), makeNode({ nodeId: 'node-0003' })]);
+
+      expect(screen.getByRole('grid')).toHaveFocus();
+      fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
+      expect(button('node-0003')).toHaveFocus();
+    });
+
+    it('leaves focus alone when the user is outside the grid', async () => {
+      seedFleet(makeNodes(200));
+      act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+      render(
+        <>
+          <input aria-label="Search" />
+          <NodeGrid />
+        </>,
+      );
+      act(() => button('node-0001').focus());
+      act(() => screen.getByRole('textbox', { name: 'Search' }).focus());
+      await Promise.resolve();
+
+      applyUpdates(makeNode({ latencyMs: 1, timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(screen.getByRole('textbox', { name: 'Search' })).toHaveFocus();
+    });
+
+    it('does not pull focus back after the user blurred the grid', async () => {
+      seedFleet(makeNodes(200));
+      act(() => useUiStore.getState().actions.setSort({ key: 'latencyMs', direction: 'desc' }));
+      render(<NodeGrid />);
+      act(() => button('node-0001').focus());
+      act(() => button('node-0001').blur());
+      await Promise.resolve();
+
+      applyUpdates(makeNode({ latencyMs: 1, timestamp: TEST_TIMESTAMP + 1 }));
+      refreshOrder();
+
+      expect(document.body).toHaveFocus();
+    });
+  });
+
+  describe('critical pulse', () => {
+    function rowOf(nodeId: string): HTMLElement | null {
+      return button(nodeId).closest('[role="row"]');
+    }
+
+    it('pulses a node that enters CRITICAL while the CRITICAL filter hid it', () => {
+      seedFleet([
+        makeNode({ nodeId: 'node-0001', status: 'CRITICAL' }),
+        makeNode({ nodeId: 'node-0002', status: 'OK' }),
+      ]);
+      act(() => useUiStore.getState().actions.setStatusFilter('CRITICAL'));
+      render(<NodeGrid />);
+
+      applyUpdates(
+        makeNode({ nodeId: 'node-0002', status: 'CRITICAL', timestamp: TEST_TIMESTAMP + 1 }),
+      );
+      refreshOrder();
+
+      expect(rowOf('node-0002')?.className).toMatch(/pulse/);
+      expect(rowOf('node-0001')?.className).not.toMatch(/pulse/);
+      act(() => {
+        vi.advanceTimersByTime(CRITICAL_PULSE_MS);
+      });
+      expect(rowOf('node-0002')?.className).not.toMatch(/pulse/);
+    });
+
+    it('does not pulse a node revealed after its pulse window has passed', () => {
+      seedFleet([makeNode({ nodeId: 'node-0001' }), makeNode({ nodeId: 'node-0002' })]);
+      act(() => useUiStore.getState().actions.setSearch('0001'));
+      render(<NodeGrid />);
+      applyUpdates(
+        makeNode({ nodeId: 'node-0002', status: 'CRITICAL', timestamp: TEST_TIMESTAMP + 1 }),
+      );
+      act(() => {
+        vi.advanceTimersByTime(CRITICAL_PULSE_MS);
+      });
+      applyUpdates();
+
+      act(() => useUiStore.getState().actions.setSearch(''));
+
+      expect(rowOf('node-0002')?.className).not.toMatch(/pulse/);
+    });
+
+    it('does not pulse nodes that are already critical in the first snapshot', () => {
+      seedFleet([makeNode({ status: 'CRITICAL' })]);
+
+      render(<NodeGrid />);
+
+      expect(rowOf('node-0001')?.className).not.toMatch(/pulse/);
+    });
   });
 });

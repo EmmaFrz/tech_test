@@ -3,12 +3,17 @@ import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
+import { createMatchMedia } from '@/test/layout';
+
 import { Dashboard } from './Dashboard';
 
 vi.mock('./startTelemetry', () => ({ startTelemetry: vi.fn(() => () => undefined) }));
 
 describe('hydration', () => {
-  it('adopts the server-rendered dashboard without a mismatch', async () => {
+  it.each([false, true])('hydrates without a mismatch with narrow layout %s', async (isNarrow) => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      createMatchMedia((query) => isNarrow && query.includes('max-width')),
+    );
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const recoverableErrors: unknown[] = [];
     const container = document.createElement('div');

@@ -139,6 +139,20 @@ describe('NodeDetailPanel', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Node not reported');
   });
 
+  it.each(['toString', 'constructor', '__proto__'])(
+    'reports a selected %s node as missing once a snapshot drops it',
+    (nodeId) => {
+      seedFleet([makeNode({ nodeId })]);
+      render(<NodeDetailPanel />);
+      select(nodeId);
+      expect(screen.getByRole('heading', { name: nodeId })).toBeVisible();
+
+      seedFleet([makeNode({ nodeId: 'node-0001' })]);
+
+      expect(screen.getByRole('status')).toHaveTextContent('Node not reported');
+    },
+  );
+
   it('collects samples first and then draws the charts from the node history', () => {
     render(<NodeDetailPanel />);
     select('node-0042');

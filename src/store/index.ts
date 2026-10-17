@@ -3,6 +3,7 @@
 export {
   useConnectionState,
   useCriticalCount,
+  useCriticalSince,
   useFleetMetrics,
   useHasNodes,
   useIsNodeStale,

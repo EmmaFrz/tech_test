@@ -60,6 +60,8 @@ jobs:
           test "$($COMPOSE_COMMAND exec -T web id -u)" != 0
           test "$($COMPOSE_COMMAND exec -T app id -u)" != 0
           test "$($COMPOSE_COMMAND exec -T mock-server id -u)" != 0
+      - name: Check recovery after the backend is recreated
+        run: node scripts/check-backend-replacement.mjs
       - name: Run unit tests in Docker
         run: $COMPOSE_COMMAND --profile test run --rm unit
       - name: Check development profile

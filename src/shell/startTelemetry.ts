@@ -30,7 +30,10 @@ export function startTelemetry(options: StartTelemetryOptions = {}): () => void 
     onHeartbeat: (serverTime) => scheduler.enqueueHeartbeat(serverTime),
     onStateChange: actions.setConnection,
   });
-  const stopVisibleNodesSync = startVisibleNodesSync();
+  // A reorder that falls due between flushes waits for the next frame, so it shares its commit.
+  const stopVisibleNodesSync = startVisibleNodesSync({
+    runRefresh: (refresh) => scheduler.scheduleTask(refresh),
+  });
 
   client.connect();
 

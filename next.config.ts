@@ -26,6 +26,7 @@ export default function createConfig(phase: string): NextConfig {
   const target = process.env['WS_PROXY_TARGET'] ?? DEFAULT_WS_PROXY_TARGET;
   return {
     ...baseConfig,
+    allowedDevOrigins: ['web-dev'],
     rewrites: () => Promise.resolve([{ source: '/ws', destination: `${target}/ws` }]),
   };
 }

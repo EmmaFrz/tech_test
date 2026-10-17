@@ -1,10 +1,10 @@
 import { useId } from 'react';
 
-import type { ComponentPropsWithoutRef, ReactElement, ReactNode } from 'react';
+import type { ComponentPropsWithRef, ReactElement, ReactNode } from 'react';
 
 import styles from './Panel.module.css';
 
-export interface PanelProps extends Omit<ComponentPropsWithoutRef<'section'>, 'title'> {
+export interface PanelProps extends Omit<ComponentPropsWithRef<'section'>, 'title'> {
   readonly title: ReactNode;
   readonly actions?: ReactNode;
 }

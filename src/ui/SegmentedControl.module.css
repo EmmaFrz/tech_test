@@ -1,5 +1,6 @@
 .group {
   display: inline-flex;
+  flex-wrap: wrap;
   padding: var(--space-1);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);

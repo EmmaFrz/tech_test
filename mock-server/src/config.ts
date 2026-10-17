@@ -25,6 +25,7 @@ export class ConfigError extends Error {
 
 const HEARTBEAT_MS = 2_000;
 const MAX_NODE_COUNT = 100_000;
+const DEFAULT_FORCE_CRITICAL = 3;
 
 interface Range {
   readonly min: number;
@@ -36,19 +37,15 @@ function readRaw(env: Environment, name: string): string | undefined {
   return raw === undefined || raw === '' ? undefined : raw;
 }
 
+function parseInteger(raw: string): number {
+  return /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+}
+
+/** Defaults are checked against `range` like explicit values, so both behave the same. */
 function readInteger(env: Environment, name: string, fallback: number, range: Range): number {
   const raw = readRaw(env, name);
-  if (raw === undefined) {
-    return fallback;
-  }
-
-  const value = Number(raw);
-  if (
-    !/^\d+$/.test(raw) ||
-    !Number.isSafeInteger(value) ||
-    value < range.min ||
-    value > range.max
-  ) {
+  const value = raw === undefined ? fallback : parseInteger(raw);
+  if (!Number.isSafeInteger(value) || value < range.min || value > range.max) {
     throw new ConfigError(`${name} must be an integer between ${range.min} and ${range.max}`);
   }
 
@@ -57,11 +54,7 @@ function readInteger(env: Environment, name: string, fallback: number, range: Ra
 
 function readRatio(env: Environment, name: string, fallback: number, range: Range): number {
   const raw = readRaw(env, name);
-  if (raw === undefined) {
-    return fallback;
-  }
-
-  const value = Number(raw);
+  const value = raw === undefined ? fallback : Number(raw);
   if (!Number.isFinite(value) || value < range.min || value > range.max) {
     throw new ConfigError(`${name} must be a number between ${range.min} and ${range.max}`);
   }
@@ -85,7 +78,13 @@ function readLogLevel(env: Environment): LogLevel {
 /** Reads and validates the process environment; throws `ConfigError` on the first invalid value. */
 export function loadConfig(env: Environment): ServerConfig {
   const nodeCount = readInteger(env, 'NODE_COUNT', 200, { min: 1, max: MAX_NODE_COUNT });
-  const forceCritical = readInteger(env, 'FORCE_CRITICAL', 3, { min: 0, max: nodeCount });
+  // The default pins three nodes, or every node of a smaller fleet; an explicit value must fit.
+  const forceCritical = readInteger(
+    env,
+    'FORCE_CRITICAL',
+    Math.min(DEFAULT_FORCE_CRITICAL, nodeCount),
+    { min: 0, max: nodeCount },
+  );
 
   return {
     port: readInteger(env, 'PORT', 4_000, { min: 1, max: 65_535 }),

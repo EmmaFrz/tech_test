@@ -109,6 +109,44 @@ describe('BatchScheduler', () => {
     expect(frames.pendingFrames()).toBe(0);
   });
 
+  it('runs scheduled tasks in the next frame, right after its flush', () => {
+    const order: string[] = [];
+    const scheduler = new BatchScheduler({
+      onFlush: () => order.push('flush'),
+      requestFrame: frames.requestFrame,
+      cancelFrame: frames.cancelFrame,
+    });
+    scheduler.scheduleTask(() => order.push('task'));
+    scheduler.enqueueUpdates([makeNode()]);
+    expect(order).toEqual([]);
+    expect(frames.pendingFrames()).toBe(1);
+
+    frames.runFrame();
+
+    expect(order).toEqual(['flush', 'task']);
+  });
+
+  it('runs a task in a frame without telemetry and does not flush an empty batch', () => {
+    const task = vi.fn();
+
+    scheduler.scheduleTask(task);
+    scheduler.scheduleTask(task);
+    frames.runFrame();
+
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(flushed).toHaveLength(0);
+  });
+
+  it('drops scheduled tasks when cleared', () => {
+    const task = vi.fn();
+    scheduler.scheduleTask(task);
+
+    scheduler.clear();
+    frames.runFrame();
+
+    expect(task).not.toHaveBeenCalled();
+  });
+
   it('ignores messages after being disposed', () => {
     scheduler.dispose();
 

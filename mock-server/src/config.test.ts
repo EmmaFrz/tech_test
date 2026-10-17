@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ConfigError, loadConfig } from './config.js';
+import { createFleetSimulation } from './simulation.js';
 
 describe('loadConfig', () => {
   it('uses the documented defaults when the environment is empty', () => {
@@ -67,5 +68,54 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ NODE_COUNT: '5', FORCE_CRITICAL: '6' })).toThrow(
       'FORCE_CRITICAL must be an integer between 0 and 5',
     );
+  });
+
+  describe('FORCE_CRITICAL for small fleets', () => {
+    it.each([
+      ['1', 1],
+      ['2', 2],
+      ['3', 3],
+    ])('pins every node of a %s-node fleet by default', (nodeCount, expected) => {
+      expect(loadConfig({ NODE_COUNT: nodeCount }).forceCritical).toBe(expected);
+    });
+
+    it.each(['1', '2', '3'])(
+      'treats an empty value, which Compose passes when unset, as the default for %s nodes',
+      (nodeCount) => {
+        expect(loadConfig({ NODE_COUNT: nodeCount, FORCE_CRITICAL: '' })).toEqual(
+          loadConfig({ NODE_COUNT: nodeCount }),
+        );
+      },
+    );
+
+    it.each([
+      ['1', '1'],
+      ['2', '1'],
+      ['3', '3'],
+    ])('accepts an explicit value that fits a %s-node fleet', (nodeCount, forceCritical) => {
+      expect(
+        loadConfig({ NODE_COUNT: nodeCount, FORCE_CRITICAL: forceCritical }).forceCritical,
+      ).toBe(Number(forceCritical));
+    });
+
+    it.each([
+      ['1', '2'],
+      ['2', '3'],
+      ['3', '4'],
+    ])('rejects an explicit value larger than a %s-node fleet', (nodeCount, forceCritical) => {
+      expect(() => loadConfig({ NODE_COUNT: nodeCount, FORCE_CRITICAL: forceCritical })).toThrow(
+        ConfigError,
+      );
+    });
+
+    it('creates as many critical nodes as it reports', () => {
+      const config = loadConfig({ NODE_COUNT: '2' });
+
+      const critical = createFleetSimulation(config, 0)
+        .snapshot()
+        .filter((node) => node.status === 'CRITICAL');
+
+      expect(critical).toHaveLength(config.forceCritical);
+    });
   });
 });

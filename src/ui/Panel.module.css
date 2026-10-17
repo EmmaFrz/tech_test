@@ -7,6 +7,15 @@
   background: var(--color-surface);
 }
 
+.panel:focus {
+  outline: none;
+}
+
+.panel:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
 .header {
   display: flex;
   align-items: center;

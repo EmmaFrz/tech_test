@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SortKey } from './sorters';
 
 import { makeNode } from '@/test/factories';
+import type { NodeTelemetry } from '@shared/protocol';
 
 import { compareNodes, DEFAULT_SORT, SORT_KEYS, sortNodes } from './sorters';
 
@@ -72,6 +73,92 @@ describe('sortNodes', () => {
     sortNodes(nodes, { key: 'nodeId', direction: 'asc' });
 
     expect(nodes.map((node) => node.nodeId)).toEqual(before);
+  });
+});
+
+describe('sortNodes against the reference order of compareNodes', () => {
+  const STATUSES = ['OK', 'WARNING', 'CRITICAL'] as const;
+
+  // Few distinct values and shuffled, unpadded IDs: nearly every comparison is a tie.
+  function tiedFleet(size: number, seed: number): NodeTelemetry[] {
+    let state = seed;
+    const next = (limit: number): number => {
+      state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return state % limit;
+    };
+    const fleet = Array.from({ length: size }, (_, index) =>
+      makeNode({
+        nodeId: `node-${index * 7 + 1}`,
+        status: STATUSES[next(3)] ?? 'OK',
+        cpuLoad: next(4) * 10,
+        memoryUsage: next(3) * 25,
+        latencyMs: 100 + next(5) * 50,
+      }),
+    );
+    return fleet.sort(() => next(3) - 1);
+  }
+
+  it.each(
+    SORT_KEYS.flatMap((key) =>
+      (['asc', 'desc'] as const).map((direction) => [key, direction] as const),
+    ),
+  )('orders a fleet full of ties by %s %s exactly like compareNodes', (key, direction) => {
+    const sort = { key, direction };
+    const fleet = tiedFleet(300, key.length * 31 + direction.length);
+
+    expect(sortNodes(fleet, sort)).toEqual([...fleet].sort(compareNodes(sort)));
+  });
+
+  it('ranks node IDs that only appear after an earlier sort', () => {
+    sortNodes(tiedFleet(50, 7), DEFAULT_SORT);
+    const grown = [
+      ...tiedFleet(50, 7),
+      makeNode({ nodeId: 'node-0', latencyMs: 100 }),
+      makeNode({ nodeId: 'node-1000', latencyMs: 100 }),
+    ];
+    const sort = { key: 'latencyMs', direction: 'asc' } as const;
+
+    expect(sortNodes(grown, sort)).toEqual([...grown].sort(compareNodes(sort)));
+  });
+
+  describe('with distinct IDs that collate equally', () => {
+    // Zero padding and composed against decomposed accents; every node shares the same metrics.
+    const EQUIVALENT_IDS = [
+      'equivalent-1',
+      'node-7',
+      'equivalent-01',
+      'café-2',
+      'equivalent-001',
+      'café-2',
+      'node-3',
+    ];
+    const fleet = EQUIVALENT_IDS.map((nodeId) => makeNode({ nodeId }));
+    const ALL_SORTS = SORT_KEYS.flatMap((key) =>
+      (['asc', 'desc'] as const).map((direction) => ({ key, direction })),
+    );
+
+    it('contains ties for compareNodes to keep in input order', () => {
+      const [first, , third] = fleet;
+      if (first === undefined || third === undefined) {
+        throw new Error('fixture is empty');
+      }
+
+      expect(compareNodes({ key: 'nodeId', direction: 'desc' })(first, third)).toBe(0);
+    });
+
+    it.each(ALL_SORTS)('keeps them in input order when sorting by $key $direction', (sort) => {
+      expect(sortNodes(fleet, sort)).toEqual([...fleet].sort(compareNodes(sort)));
+    });
+
+    it.each(ALL_SORTS)(
+      'does not let an earlier sort decide their order when sorting by $key $direction',
+      (sort) => {
+        sortNodes(fleet, sort);
+        const reordered = [...fleet].reverse();
+
+        expect(sortNodes(reordered, sort)).toEqual([...reordered].sort(compareNodes(sort)));
+      },
+    );
   });
 });
 

@@ -20,6 +20,23 @@ function isPercentage(value: unknown): value is number {
   return isFiniteNumber(value) && value >= 0 && value <= 100;
 }
 
+// Past year 9999 dates format with six-digit years, and an absurd server time would mark every
+// node stale until the next snapshot; both must be stopped here, before they reach the store.
+const MAX_EPOCH_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
+/** Epoch milliseconds from 1970 to the end of year 9999, the range the UI can format. */
+function isEpochMilliseconds(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0 && value <= MAX_EPOCH_MS;
+}
+
+// A round trip slower than an hour is a broken probe. Finite values near Number.MAX_VALUE would
+// overflow the fleet average and the chart axis; an hour keeps any fleet's latency sum exact.
+const MAX_LATENCY_MS = 3_600_000;
+
+function isLatencyMs(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0 && value <= MAX_LATENCY_MS;
+}
+
 export function isNodeTelemetry(value: unknown): value is NodeTelemetry {
   return (
     isRecord(value) &&
@@ -28,9 +45,8 @@ export function isNodeTelemetry(value: unknown): value is NodeTelemetry {
     isNodeStatus(value['status']) &&
     isPercentage(value['cpuLoad']) &&
     isPercentage(value['memoryUsage']) &&
-    isFiniteNumber(value['latencyMs']) &&
-    value['latencyMs'] >= 0 &&
-    isFiniteNumber(value['timestamp'])
+    isLatencyMs(value['latencyMs']) &&
+    isEpochMilliseconds(value['timestamp'])
   );
 }
 
@@ -49,7 +65,7 @@ export function isServerMessage(value: unknown): value is ServerMessage {
     case 'delta':
       return isNodeTelemetryList(value['updates']);
     case 'heartbeat':
-      return isFiniteNumber(value['serverTime']);
+      return isEpochMilliseconds(value['serverTime']);
     default:
       return false;
   }

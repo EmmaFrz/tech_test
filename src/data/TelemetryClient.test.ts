@@ -5,7 +5,12 @@ import { makeNode } from '@/test/factories';
 import { MockWebSocket } from '@/test/MockWebSocket';
 import type { NodeTelemetry } from '@shared/protocol';
 
-import { computeBackoffDelayMs, TelemetryClient } from './TelemetryClient';
+import {
+  computeBackoffDelayMs,
+  FIRST_MESSAGE_TIMEOUT_MS,
+  IDLE_TIMEOUT_MS,
+  TelemetryClient,
+} from './TelemetryClient';
 
 const NO_JITTER = (): number => 0.5;
 
@@ -31,17 +36,18 @@ function createClient(): { readonly client: TelemetryClient; readonly recorder: 
 }
 
 describe('computeBackoffDelayMs', () => {
-  it('doubles from 0.5 s and caps at 10 s', () => {
+  it('doubles from 0.5 s, then waits the 10 s cap once five attempts have failed', () => {
     const delays = [1, 2, 3, 4, 5, 6, 7].map((attempt) =>
       computeBackoffDelayMs(attempt, NO_JITTER),
     );
 
-    expect(delays).toEqual([500, 1_000, 2_000, 4_000, 8_000, 10_000, 10_000]);
+    expect(delays).toEqual([500, 1_000, 2_000, 4_000, 10_000, 10_000, 10_000]);
   });
 
   it('spreads delays by up to 20 percent and never exceeds the cap', () => {
     expect(computeBackoffDelayMs(1, () => 0)).toBe(400);
     expect(computeBackoffDelayMs(1, () => 1)).toBe(600);
+    expect(computeBackoffDelayMs(5, () => 0)).toBe(8_000);
     expect(computeBackoffDelayMs(6, () => 1)).toBe(10_000);
   });
 });
@@ -96,6 +102,17 @@ describe('TelemetryClient', () => {
     expect(recorder.states).toEqual(['connecting']);
   });
 
+  it('drops and counts a heartbeat whose server time is out of range', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { client, recorder } = createClient();
+    client.connect();
+
+    MockWebSocket.latest().simulateMessage({ type: 'heartbeat', seq: 1, serverTime: 1e100 });
+
+    expect(client.invalidMessageCount).toBe(1);
+    expect(recorder.heartbeats).toEqual([]);
+  });
+
   it('reconnects with exponential backoff after the socket closes', () => {
     const { client, recorder } = createClient();
     client.connect();
@@ -144,6 +161,41 @@ describe('TelemetryClient', () => {
     expect(MockWebSocket.instances).toHaveLength(7);
   });
 
+  it('goes offline on the fifth consecutive failure and retries at the cap from then on', () => {
+    const { client, recorder } = createClient();
+    client.connect();
+    for (const delayMs of [500, 1_000, 2_000]) {
+      MockWebSocket.latest().simulateClose();
+      vi.advanceTimersByTime(delayMs);
+    }
+
+    MockWebSocket.latest().simulateClose();
+    expect(recorder.states.at(-1)).toBe('reconnecting');
+    vi.advanceTimersByTime(3_999);
+    expect(MockWebSocket.instances).toHaveLength(4);
+    vi.advanceTimersByTime(1);
+    expect(MockWebSocket.instances).toHaveLength(5);
+
+    MockWebSocket.latest().simulateClose();
+    expect(recorder.states.at(-1)).toBe('offline');
+    vi.advanceTimersByTime(9_999);
+    expect(MockWebSocket.instances).toHaveLength(5);
+    vi.advanceTimersByTime(1);
+    expect(MockWebSocket.instances).toHaveLength(6);
+
+    MockWebSocket.latest().simulateClose();
+    expect(recorder.states.at(-1)).toBe('offline');
+    vi.advanceTimersByTime(10_000);
+    expect(MockWebSocket.instances).toHaveLength(7);
+
+    MockWebSocket.latest().simulateMessage({ type: 'heartbeat', seq: 1, serverTime: 1 });
+    expect(recorder.states.at(-1)).toBe('live');
+    MockWebSocket.latest().simulateClose();
+    expect(recorder.states.at(-1)).toBe('reconnecting');
+    vi.advanceTimersByTime(500);
+    expect(MockWebSocket.instances).toHaveLength(8);
+  });
+
   it('returns to live when a retry succeeds', () => {
     const { client, recorder } = createClient();
     client.connect();
@@ -180,7 +232,7 @@ describe('TelemetryClient', () => {
     first.simulateClose();
 
     expect(recorder.deltas).toHaveLength(0);
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(FIRST_MESSAGE_TIMEOUT_MS - 1);
     expect(MockWebSocket.instances).toHaveLength(2);
   });
 
@@ -201,5 +253,104 @@ describe('TelemetryClient', () => {
     client.connect();
 
     expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  describe('silence watchdog', () => {
+    beforeEach(() => {
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+
+    it('closes and replaces a socket that never delivers a first message', () => {
+      const { client, recorder } = createClient();
+      client.connect();
+      const socket = MockWebSocket.latest();
+      socket.simulateOpen();
+
+      vi.advanceTimersByTime(FIRST_MESSAGE_TIMEOUT_MS - 1);
+      expect(socket.isClosed).toBe(false);
+      vi.advanceTimersByTime(1);
+
+      expect(socket.isClosed).toBe(true);
+      expect(recorder.states).toEqual(['connecting', 'reconnecting']);
+      vi.advanceTimersByTime(500);
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it('reconnects when a live stream stops sending heartbeats without closing', () => {
+      const { client, recorder } = createClient();
+      client.connect();
+      const socket = MockWebSocket.latest();
+      socket.simulateMessage({ type: 'snapshot', seq: 1, nodes: [makeNode()] });
+
+      vi.advanceTimersByTime(IDLE_TIMEOUT_MS - 1);
+      expect(recorder.states.at(-1)).toBe('live');
+      vi.advanceTimersByTime(1);
+
+      expect(socket.isClosed).toBe(true);
+      expect(recorder.states.at(-1)).toBe('reconnecting');
+      vi.advanceTimersByTime(500);
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it('treats a stream of invalid messages as silence', () => {
+      const { client, recorder } = createClient();
+      client.connect();
+      const socket = MockWebSocket.latest();
+      socket.simulateMessage({ type: 'snapshot', seq: 1, nodes: [makeNode()] });
+
+      for (let second = 1; second <= IDLE_TIMEOUT_MS / 1_000; second += 1) {
+        vi.advanceTimersByTime(1_000);
+        socket.simulateMessage({ type: 'heartbeat', seq: second + 1, serverTime: 1e100 });
+      }
+
+      expect(client.invalidMessageCount).toBeGreaterThan(0);
+      expect(socket.isClosed).toBe(true);
+      expect(recorder.states.at(-1)).toBe('reconnecting');
+    });
+
+    it('keeps a healthy stream open, including after a reconnect', () => {
+      const { client, recorder } = createClient();
+      client.connect();
+      MockWebSocket.latest().simulateClose();
+      vi.advanceTimersByTime(500);
+      const socket = MockWebSocket.latest();
+      socket.simulateMessage({ type: 'snapshot', seq: 1, nodes: [makeNode()] });
+
+      for (let beat = 1; beat <= 60; beat += 1) {
+        vi.advanceTimersByTime(2_000);
+        socket.simulateMessage({ type: 'heartbeat', seq: beat + 1, serverTime: beat });
+      }
+
+      expect(socket.isClosed).toBe(false);
+      expect(MockWebSocket.instances).toHaveLength(2);
+      expect(recorder.states).toEqual(['connecting', 'reconnecting', 'live']);
+    });
+
+    it('schedules exactly one retry when the replaced socket closes late', () => {
+      const { client } = createClient();
+      client.connect();
+      const silent = MockWebSocket.latest();
+      silent.simulateMessage({ type: 'snapshot', seq: 1, nodes: [makeNode()] });
+      vi.advanceTimersByTime(IDLE_TIMEOUT_MS);
+
+      silent.simulateClose();
+      vi.advanceTimersByTime(500);
+
+      expect(MockWebSocket.instances).toHaveLength(2);
+      vi.advanceTimersByTime(1_000);
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it('stops watching once the socket closes or the client disconnects', () => {
+      const { client } = createClient();
+      client.connect();
+      MockWebSocket.latest().simulateClose();
+      vi.advanceTimersByTime(500);
+
+      client.disconnect();
+      vi.advanceTimersByTime(FIRST_MESSAGE_TIMEOUT_MS * 4);
+
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
   });
 });

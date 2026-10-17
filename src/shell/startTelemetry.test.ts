@@ -1,7 +1,8 @@
 import { act } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { historyStore, useTelemetryStore, useVisibleNodesStore } from '@/store';
+import { selectFleetMetrics } from '@/store/selectors';
 import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
 import { MockWebSocket } from '@/test/MockWebSocket';
 
@@ -83,6 +84,29 @@ describe('startTelemetry', () => {
     runFrame();
 
     expect(useTelemetryStore.getState().byId['node-0001']?.latencyMs).toBe(120);
+  });
+
+  it('drops impossible clock values and keeps the last valid server clock and fleet', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const socket = MockWebSocket.latest();
+    act(() => socket.simulateMessage({ type: 'snapshot', seq: 1, nodes: makeNodes(2) }));
+
+    socket.simulateMessage({ type: 'heartbeat', seq: 2, serverTime: 1e100 });
+    socket.simulateMessage({
+      type: 'delta',
+      seq: 3,
+      updates: [makeNode({ timestamp: 1e20, cpuLoad: 99 })],
+    });
+    runFrame();
+
+    const state = useTelemetryStore.getState();
+    expect(state.serverTime).toBe(TEST_TIMESTAMP);
+    expect(state.byId['node-0001']?.cpuLoad).toBe(40);
+    expect(selectFleetMetrics(state).activeNodes).toBe(2);
+
+    socket.simulateMessage({ type: 'heartbeat', seq: 4, serverTime: TEST_TIMESTAMP + 2_000 });
+    runFrame();
+    expect(useTelemetryStore.getState().serverTime).toBe(TEST_TIMESTAMP + 2_000);
   });
 
   it('marks the store offline once stopped', () => {

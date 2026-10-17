@@ -11,7 +11,8 @@ services:
       TICK_MS: '${TICK_MS:-100}'
       UPDATE_RATIO: '${UPDATE_RATIO:-0.3}'
       SEED: '${SEED:-42}'
-      FORCE_CRITICAL: '${FORCE_CRITICAL:-3}'
+      # Empty when unset, so the server applies its own default: 3, or every node of a smaller fleet.
+      FORCE_CRITICAL: '${FORCE_CRITICAL:-}'
       DROPOUT_RATIO: '${DROPOUT_RATIO:-0.01}'
       LOG_LEVEL: '${LOG_LEVEL:-info}'
     healthcheck:
@@ -91,3 +92,10 @@ services:
     depends_on:
       web:
         condition: service_healthy
+
+# Engine 29 adds these defaults to network inspection; v1 must compare the same explicit values.
+networks:
+  default:
+    driver_opts:
+      com.docker.network.enable_ipv4: 'true'
+      com.docker.network.enable_ipv6: 'false'

@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useUiStore } from '@/store';
-import { makeNode } from '@/test/factories';
-import { mockElementLayout } from '@/test/layout';
+import type { MockInstance } from 'vitest';
+
+import { ORDER_REFRESH_MS, useTelemetryStore, useUiStore } from '@/store';
+import { makeNode, makeNodes, TEST_TIMESTAMP } from '@/test/factories';
+import { mockElementLayout, mockNarrowLayout } from '@/test/layout';
 import { resetStores, seedFleet, startVisibleNodes } from '@/test/stores';
 
 import { App } from './App';
@@ -72,5 +74,183 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close node details' }));
 
     expect(useUiStore.getState().selectedNodeId).toBeNull();
+  });
+});
+
+describe('App detail panel focus', () => {
+  let stopSync: () => void;
+
+  function rowButton(nodeId: string): HTMLElement {
+    return screen.getByRole('button', { name: nodeId, hidden: true });
+  }
+
+  function openWithKeyboard(nodeId: string): void {
+    act(() => rowButton(nodeId).focus());
+    fireEvent.click(rowButton(nodeId));
+  }
+
+  function isInert(element: Element): boolean {
+    return element.closest('[inert]') !== null;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockElementLayout({ viewportHeight: 440, rowHeight: 44 });
+    resetStores();
+    stopSync = startVisibleNodes();
+    seedFleet(makeNodes(5));
+  });
+
+  afterEach(() => {
+    stopSync();
+    vi.useRealTimers();
+  });
+
+  describe('as a drawer on narrow screens', () => {
+    beforeEach(() => {
+      mockNarrowLayout();
+    });
+
+    it('moves focus into the drawer and takes the regions it covers out of reach', () => {
+      render(<App />);
+
+      openWithKeyboard('node-0002');
+
+      expect(screen.getByTestId('node-detail')).toHaveFocus();
+      expect(isInert(screen.getByTestId('node-grid'))).toBe(true);
+      expect(isInert(screen.getByTestId('node-detail'))).toBe(false);
+      expect(isInert(screen.getByRole('toolbar', { name: 'Node filters', hidden: true }))).toBe(
+        true,
+      );
+      expect(isInert(screen.getByRole('region', { name: 'Fleet overview', hidden: true }))).toBe(
+        true,
+      );
+      expect(isInert(screen.getByRole('button', { name: 'Pause' }))).toBe(false);
+      expect(isInert(screen.getByTestId('connection-status'))).toBe(false);
+    });
+
+    it.each([
+      ['the Close button', () => fireEvent.click(screen.getByRole('button', { name: 'Close' }))],
+      ['Escape', () => fireEvent.keyDown(document, { key: 'Escape' })],
+      [
+        'the backdrop',
+        () => fireEvent.click(screen.getByRole('button', { name: 'Close node details' })),
+      ],
+    ])('returns focus to the row that opened it when closed with %s', (_, close) => {
+      render(<App />);
+      openWithKeyboard('node-0002');
+
+      close();
+
+      expect(rowButton('node-0002')).toHaveFocus();
+      expect(isInert(screen.getByTestId('node-grid'))).toBe(false);
+    });
+
+    it('falls back to the grid when the row left the list while the drawer was open', () => {
+      seedFleet(['a', 'b', 'c'].map((nodeId) => makeNode({ nodeId, status: 'CRITICAL' })));
+      act(() => useUiStore.getState().actions.setStatusFilter('CRITICAL'));
+      render(<App />);
+      openWithKeyboard('b');
+      act(() =>
+        useTelemetryStore.getState().actions.applyBatch({
+          updates: [makeNode({ nodeId: 'b', status: 'OK', timestamp: TEST_TIMESTAMP + 1 })],
+          serverTime: null,
+          receivedAt: Date.now(),
+        }),
+      );
+      act(() => {
+        vi.advanceTimersByTime(ORDER_REFRESH_MS);
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+      expect(screen.queryByRole('button', { name: 'b' })).not.toBeInTheDocument();
+      expect(screen.getByRole('grid')).toHaveFocus();
+    });
+
+    describe('on a page scrolled by large text or a short window', () => {
+      let scrollIntoView: MockInstance<Element['scrollIntoView']>;
+
+      // jsdom has no layout: the matching element sits outside the window, the rest at its origin.
+      function placeOutsideWindow(matches: (element: HTMLElement) => boolean, top: number): void {
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+          this: HTMLElement,
+        ) {
+          return matches(this) ? new DOMRect(0, top, 300, 40) : new DOMRect();
+        });
+      }
+
+      beforeEach(() => {
+        scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
+      });
+
+      it('shows the top of the drawer when the page was scrolled past it', () => {
+        render(<App />);
+        const panel = screen.getByTestId('node-detail');
+        placeOutsideWindow((element) => element === panel, -400);
+
+        openWithKeyboard('node-0002');
+
+        expect(panel).toHaveFocus();
+        expect(scrollIntoView.mock.contexts).toEqual([panel]);
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+      });
+
+      it('brings the row it returns focus to back into the window', () => {
+        render(<App />);
+        openWithKeyboard('node-0002');
+        const row = rowButton('node-0002').closest('[role="row"]');
+        placeOutsideWindow((element) => element === row, window.innerHeight + 100);
+
+        fireEvent.keyDown(document, { key: 'Escape' });
+
+        expect(rowButton('node-0002')).toHaveFocus();
+        expect(scrollIntoView.mock.contexts).toEqual([row]);
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      });
+
+      it('leaves the page where it is when the drawer and the row are in the window', () => {
+        render(<App />);
+
+        openWithKeyboard('node-0002');
+        fireEvent.keyDown(document, { key: 'Escape' });
+
+        expect(rowButton('node-0002')).toHaveFocus();
+        expect(scrollIntoView).not.toHaveBeenCalled();
+      });
+    });
+
+    it('keeps focus in the header when the drawer is closed from there', () => {
+      render(<App />);
+      openWithKeyboard('node-0002');
+      const pause = screen.getByRole('button', { name: 'Pause' });
+      act(() => pause.focus());
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+
+      expect(pause).toHaveFocus();
+    });
+  });
+
+  describe('beside the grid on wide screens', () => {
+    it('leaves focus on the row and the grid usable while the panel is open', () => {
+      render(<App />);
+
+      openWithKeyboard('node-0002');
+
+      expect(rowButton('node-0002')).toHaveFocus();
+      expect(isInert(screen.getByTestId('node-grid'))).toBe(false);
+    });
+
+    it('returns focus to the row after the focused Close button disappears', () => {
+      render(<App />);
+      openWithKeyboard('node-0002');
+      const close = screen.getByRole('button', { name: 'Close' });
+      act(() => close.focus());
+
+      fireEvent.click(close);
+
+      expect(rowButton('node-0002')).toHaveFocus();
+    });
   });
 });

@@ -13,11 +13,27 @@ const MAX_BACKOFF_MS = 10_000;
 const JITTER_RATIO = 0.2;
 const OFFLINE_AFTER_FAILED_ATTEMPTS = 5;
 
+// The server sends a heartbeat every 2 s: five missed beats mean the stream is dead even when the
+// socket never closes (a half-open connection, or a peer that only sends invalid messages).
+export const IDLE_TIMEOUT_MS = 10_000;
+// Opening the socket and receiving the first snapshot, which is large for big fleets.
+export const FIRST_MESSAGE_TIMEOUT_MS = 15_000;
+
 const log = createLogger('ws');
 
-/** Doubles from 0.5 s up to a 10 s cap; jitter of +-20 % keeps clients from retrying in lockstep. */
+function isOfflineAfter(failedAttempts: number): boolean {
+  return failedAttempts >= OFFLINE_AFTER_FAILED_ATTEMPTS;
+}
+
+/**
+ * Delay before the next attempt after `failedAttempts` consecutive failures: doubles from 0.5 s
+ * while reconnecting and waits the 10 s cap once offline. Jitter of +-20 % keeps clients from
+ * retrying in lockstep and never pushes a delay past the cap.
+ */
 export function computeBackoffDelayMs(failedAttempts: number, random: () => number): number {
-  const base = Math.min(MAX_BACKOFF_MS, INITIAL_BACKOFF_MS * 2 ** (failedAttempts - 1));
+  const base = isOfflineAfter(failedAttempts)
+    ? MAX_BACKOFF_MS
+    : Math.min(MAX_BACKOFF_MS, INITIAL_BACKOFF_MS * 2 ** (failedAttempts - 1));
   const jitter = (random() * 2 - 1) * JITTER_RATIO;
   return Math.min(MAX_BACKOFF_MS, Math.round(base * (1 + jitter)));
 }
@@ -36,6 +52,7 @@ export class TelemetryClient {
   private readonly options: TelemetryClientOptions;
   private socket: TelemetrySocket | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private state: ConnectionState = 'offline';
   private failedAttempts = 0;
   private isStopped = true;
@@ -63,6 +80,7 @@ export class TelemetryClient {
   disconnect(): void {
     this.isStopped = true;
     this.clearRetryTimer();
+    this.clearWatchdog();
     this.detachSocket();
     this.setState('offline');
   }
@@ -84,6 +102,7 @@ export class TelemetryClient {
         this.handleClose();
       }
     };
+    this.armWatchdog(FIRST_MESSAGE_TIMEOUT_MS);
   }
 
   private detachSocket(): void {
@@ -113,6 +132,7 @@ export class TelemetryClient {
       return;
     }
 
+    this.armWatchdog(IDLE_TIMEOUT_MS);
     this.failedAttempts = 0;
     this.setState('live');
 
@@ -133,15 +153,44 @@ export class TelemetryClient {
 
   private handleClose(): void {
     this.socket = null;
+    this.clearWatchdog();
+    this.scheduleRetry();
+  }
+
+  private handleSilence(timeoutMs: number): void {
+    log.warn('no valid telemetry, reconnecting', { timeoutMs });
+    this.detachSocket();
+    this.scheduleRetry();
+  }
+
+  private scheduleRetry(): void {
     this.failedAttempts += 1;
     const random = this.options.random ?? Math.random;
     const delayMs = computeBackoffDelayMs(this.failedAttempts, random);
-    this.setState(this.failedAttempts > OFFLINE_AFTER_FAILED_ATTEMPTS ? 'offline' : 'reconnecting');
+    this.setState(isOfflineAfter(this.failedAttempts) ? 'offline' : 'reconnecting');
     log.info('connection lost, retrying', { attempt: this.failedAttempts, delayMs });
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       this.openSocket();
     }, delayMs);
+  }
+
+  // Only valid messages re-arm the watchdog, and they do so on receipt, not in the animation
+  // frame flush, so a background tab whose frames are paused cannot trip it while data arrives.
+  // Timer throttling in background tabs can only delay the check, never fire it early.
+  private armWatchdog(timeoutMs: number): void {
+    this.clearWatchdog();
+    this.watchdogTimer = setTimeout(() => {
+      this.watchdogTimer = null;
+      this.handleSilence(timeoutMs);
+    }, timeoutMs);
+  }
+
+  private clearWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      clearTimeout(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
   }
 
   private clearRetryTimer(): void {

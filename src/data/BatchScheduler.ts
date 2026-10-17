@@ -15,6 +15,7 @@ export interface BatchSchedulerOptions {
  */
 export class BatchScheduler {
   private readonly pending = new Map<string, NodeTelemetry>();
+  private readonly tasks = new Set<() => void>();
   private readonly onFlush: (batch: IngestBatch) => void;
   private readonly requestFrame: (callback: () => void) => number;
   private readonly cancelFrame: (handle: number) => void;
@@ -42,9 +43,19 @@ export class BatchScheduler {
     this.scheduleFlush();
   }
 
+  /**
+   * Runs `task` right after the next flush, in the same animation frame, so whatever it writes to
+   * the stores lands in that frame's single commit instead of a commit of its own.
+   */
+  scheduleTask(task: () => void): void {
+    this.tasks.add(task);
+    this.scheduleFlush();
+  }
+
   /** Drops everything not yet flushed, e.g. when a snapshot supersedes it. */
   clear(): void {
     this.pending.clear();
+    this.tasks.clear();
     this.latestServerTime = null;
     if (this.frameHandle !== null) {
       this.cancelFrame(this.frameHandle);
@@ -66,13 +77,21 @@ export class BatchScheduler {
 
   private readonly flush = (): void => {
     this.frameHandle = null;
-    const batch: IngestBatch = {
-      updates: [...this.pending.values()],
-      serverTime: this.latestServerTime,
-      receivedAt: this.now(),
-    };
-    this.pending.clear();
-    this.latestServerTime = null;
-    this.onFlush(batch);
+    if (this.pending.size > 0 || this.latestServerTime !== null) {
+      const batch: IngestBatch = {
+        updates: [...this.pending.values()],
+        serverTime: this.latestServerTime,
+        receivedAt: this.now(),
+      };
+      this.pending.clear();
+      this.latestServerTime = null;
+      this.onFlush(batch);
+    }
+
+    const tasks = [...this.tasks];
+    this.tasks.clear();
+    for (const task of tasks) {
+      task();
+    }
   };
 }

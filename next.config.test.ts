@@ -18,6 +18,7 @@ describe('next config', () => {
 
   it('leaves /ws to the edge in production', () => {
     expect(createConfig(PHASE_PRODUCTION_BUILD).rewrites).toBeUndefined();
+    expect(createConfig(PHASE_PRODUCTION_BUILD).allowedDevOrigins).toBeUndefined();
   });
 
   it('proxies /ws to the local mock server in development', async () => {
@@ -26,6 +27,7 @@ describe('next config', () => {
     const rewrites = await createConfig(PHASE_DEVELOPMENT_SERVER).rewrites?.();
 
     expect(rewrites).toEqual([{ source: '/ws', destination: 'http://localhost:4000/ws' }]);
+    expect(createConfig(PHASE_DEVELOPMENT_SERVER).allowedDevOrigins).toEqual(['web-dev']);
   });
 
   it('proxies /ws to the configured target in development', async () => {

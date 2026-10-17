@@ -16,13 +16,20 @@ export const ORDER_REFRESH_MS = 1_000;
 
 export interface VisibleNodesState {
   readonly ids: readonly string[];
+  /** The list before the latest filter, sort or search change, until the grid renders the new one. */
+  readonly previousIds: readonly string[];
+  /** Counts filter, sort and search changes, whose list the grid renders in a deferred pass. */
+  readonly queryRevision: number;
 }
 
 export type VisibleNodesStore = UseBoundStore<StoreApi<VisibleNodesState>>;
 
 export function createVisibleNodesStore(): VisibleNodesStore {
   return create<VisibleNodesState>()(
-    devtools(() => ({ ids: [] }), { name: 'visibleNodesStore', enabled: IS_DEVELOPMENT }),
+    devtools(() => ({ ids: [], previousIds: [], queryRevision: 0 }), {
+      name: 'visibleNodesStore',
+      enabled: IS_DEVELOPMENT,
+    }),
   );
 }
 
@@ -33,6 +40,15 @@ export interface VisibleNodesSyncOptions {
   readonly ui?: StoreApi<UiState>;
   readonly target?: StoreApi<VisibleNodesState>;
   readonly now?: () => number;
+  /**
+   * Runs an order refresh that falls due between telemetry flushes. The telemetry wiring passes
+   * its frame scheduler, so the refresh shares the next flush's commit; by default it runs at once.
+   */
+  readonly runRefresh?: (refresh: () => void) => void;
+}
+
+function runImmediately(refresh: () => void): void {
+  refresh();
 }
 
 function haveSameItems(left: readonly string[], right: readonly string[]): boolean {
@@ -50,17 +66,20 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
   const ui = options.ui ?? useUiStore;
   const target = options.target ?? useVisibleNodesStore;
   const now = options.now ?? Date.now;
+  const runRefresh = options.runRefresh ?? runImmediately;
   let lastComputedAt = Number.NEGATIVE_INFINITY;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let isRefreshDue = false;
 
   function clearRefreshTimer(): void {
+    isRefreshDue = false;
     if (refreshTimer !== null) {
       clearTimeout(refreshTimer);
       refreshTimer = null;
     }
   }
 
-  function recompute(): void {
+  function recompute(isQueryChange = false): void {
     clearRefreshTimer();
     lastComputedAt = now();
     const { statusFilter, search, sort } = ui.getState();
@@ -69,8 +88,22 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
       search,
       sort,
     });
-    if (!haveSameItems(target.getState().ids, ids)) {
-      target.setState({ ids }, false);
+    const current = target.getState();
+    if (haveSameItems(current.ids, ids)) {
+      return;
+    }
+
+    target.setState(
+      isQueryChange
+        ? { ids, previousIds: current.ids, queryRevision: current.queryRevision + 1 }
+        : { ids },
+      false,
+    );
+  }
+
+  function refreshIfDue(): void {
+    if (isRefreshDue) {
+      recompute();
     }
   }
 
@@ -81,7 +114,11 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
       return;
     }
 
-    refreshTimer ??= setTimeout(recompute, ORDER_REFRESH_MS - elapsedMs);
+    refreshTimer ??= setTimeout(() => {
+      refreshTimer = null;
+      isRefreshDue = true;
+      runRefresh(refreshIfDue);
+    }, ORDER_REFRESH_MS - elapsedMs);
   }
 
   const stopTelemetry = telemetry.subscribe((state, previous) => {
@@ -97,7 +134,7 @@ export function startVisibleNodesSync(options: VisibleNodesSyncOptions = {}): ()
       state.search !== previous.search ||
       state.sort !== previous.sort
     ) {
-      recompute();
+      recompute(true);
     }
   });
   recompute();

@@ -5,6 +5,7 @@ import { NodeToolbar } from '@/features/nodes';
 import { MetricsOverview } from '@/features/overview';
 
 import styles from './App.module.css';
+import { CoveredByDrawer } from './CoveredByDrawer';
 import { DocumentTitle } from './DocumentTitle';
 import { RegionBoundary } from './RegionBoundary';
 import { Workspace } from './Workspace';
@@ -21,12 +22,14 @@ export function App(): ReactElement {
       </header>
       <ConnectionBanner />
       <main className={styles.main}>
-        <RegionBoundary region="the fleet overview">
-          <MetricsOverview />
-        </RegionBoundary>
-        <RegionBoundary region="the node filters">
-          <NodeToolbar />
-        </RegionBoundary>
+        <CoveredByDrawer>
+          <RegionBoundary region="the fleet overview">
+            <MetricsOverview />
+          </RegionBoundary>
+          <RegionBoundary region="the node filters">
+            <NodeToolbar />
+          </RegionBoundary>
+        </CoveredByDrawer>
         <Workspace />
       </main>
       <DocumentTitle />

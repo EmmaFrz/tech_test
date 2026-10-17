@@ -10,8 +10,17 @@ export interface HistorySample {
   readonly latencyMs: number;
 }
 
+/** A snapshot lists the whole fleet; an update lists only the nodes that reported. */
+export type HistoryBatchKind = 'snapshot' | 'update';
+
 export interface HistoryStore {
-  readonly record: (updates: readonly NodeTelemetry[]) => void;
+  /**
+   * Appends one sample per node, skipping samples that are not newer than the node's latest one.
+   * A snapshot also reconciles the fleet: it drops the history of every node it no longer lists
+   * and restarts a history whose clock it moves backwards, which means a different server session.
+   * Histories that a snapshot continues (an ordinary reconnect) are kept.
+   */
+  readonly record: (samples: readonly NodeTelemetry[], kind?: HistoryBatchKind) => void;
   readonly getSamples: (nodeId: string) => readonly HistorySample[];
   readonly subscribe: (nodeId: string, listener: () => void) => () => void;
   readonly clear: () => void;
@@ -33,12 +42,7 @@ export function createHistoryStore(capacity: number = HISTORY_CAPACITY): History
   const histories = new Map<string, NodeHistory>();
   const listeners = new Map<string, Set<() => void>>();
 
-  function getOrCreate(nodeId: string): NodeHistory {
-    const existing = histories.get(nodeId);
-    if (existing !== undefined) {
-      return existing;
-    }
-
+  function createHistory(nodeId: string): NodeHistory {
     const created: NodeHistory = {
       buffer: new RingBuffer<HistorySample>(capacity),
       cachedSamples: null,
@@ -48,29 +52,54 @@ export function createHistoryStore(capacity: number = HISTORY_CAPACITY): History
     return created;
   }
 
+  function historyFor(sample: NodeTelemetry, kind: HistoryBatchKind): NodeHistory {
+    const existing = histories.get(sample.nodeId);
+    if (existing === undefined) {
+      return createHistory(sample.nodeId);
+    }
+
+    return kind === 'snapshot' && sample.timestamp < existing.lastTimestamp
+      ? createHistory(sample.nodeId)
+      : existing;
+  }
+
+  function notify(nodeIds: Iterable<string>): void {
+    for (const nodeId of nodeIds) {
+      listeners.get(nodeId)?.forEach((listener) => listener());
+    }
+  }
+
   return {
-    record: (updates) => {
+    record: (samples, kind = 'update') => {
       const touched = new Set<string>();
-      for (const update of updates) {
-        const history = getOrCreate(update.nodeId);
-        if (update.timestamp <= history.lastTimestamp) {
+      if (kind === 'snapshot') {
+        const listed = new Set(samples.map((sample) => sample.nodeId));
+        for (const nodeId of histories.keys()) {
+          if (!listed.has(nodeId)) {
+            histories.delete(nodeId);
+            touched.add(nodeId);
+          }
+        }
+      }
+
+      for (const sample of samples) {
+        const history = historyFor(sample, kind);
+        if (sample.timestamp <= history.lastTimestamp) {
           continue;
         }
 
         history.buffer.push({
-          timestamp: update.timestamp,
-          cpuLoad: update.cpuLoad,
-          memoryUsage: update.memoryUsage,
-          latencyMs: update.latencyMs,
+          timestamp: sample.timestamp,
+          cpuLoad: sample.cpuLoad,
+          memoryUsage: sample.memoryUsage,
+          latencyMs: sample.latencyMs,
         });
-        history.lastTimestamp = update.timestamp;
+        history.lastTimestamp = sample.timestamp;
         history.cachedSamples = null;
-        touched.add(update.nodeId);
+        touched.add(sample.nodeId);
       }
 
-      for (const nodeId of touched) {
-        listeners.get(nodeId)?.forEach((listener) => listener());
-      }
+      notify(touched);
     },
     getSamples: (nodeId) => {
       const history = histories.get(nodeId);
@@ -96,9 +125,7 @@ export function createHistoryStore(capacity: number = HISTORY_CAPACITY): History
     clear: () => {
       const subscribed = [...listeners.keys()];
       histories.clear();
-      for (const nodeId of subscribed) {
-        listeners.get(nodeId)?.forEach((listener) => listener());
-      }
+      notify(subscribed);
     },
   };
 }

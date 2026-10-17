@@ -35,6 +35,11 @@ export function useIsNodeStale(nodeId: string): boolean {
   });
 }
 
+/** Browser time the node entered CRITICAL while that entry is recent enough to pulse. */
+export function useCriticalSince(nodeId: string): number | undefined {
+  return useTelemetryStore((state) => state.criticalSince[nodeId]);
+}
+
 export function useFleetMetrics(): FleetMetrics {
   return useTelemetryStore(useShallow(selectFleetMetrics));
 }
@@ -82,9 +87,21 @@ export function useMillisecondsSinceLastMessage(refreshMs: number): number | nul
   return elapsedMs;
 }
 
-/** Deferred so typing and filter clicks stay responsive while the grid catches up. */
+/**
+ * A telemetry reorder renders at once, in the commit of the flush that caused it. A filter, sort
+ * or search change renders its list in a deferred pass, so the control responds in the first
+ * frame and the grid follows.
+ */
 export function useVisibleNodeIds(): readonly string[] {
-  return useDeferredValue(useVisibleNodesStore((state) => state.ids));
+  const { ids, previousIds, queryRevision } = useVisibleNodesStore(
+    useShallow((state) => ({
+      ids: state.ids,
+      previousIds: state.previousIds,
+      queryRevision: state.queryRevision,
+    })),
+  );
+  const renderedRevision = useDeferredValue(queryRevision);
+  return renderedRevision === queryRevision ? ids : previousIds;
 }
 
 export function useIsNodeVisible(nodeId: string): boolean {

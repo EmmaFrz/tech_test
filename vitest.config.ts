@@ -14,7 +14,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}', 'mock-server/src/**/*.test.ts', 'next.config.test.ts'],
+    include: [
+      'src/**/*.test.{ts,tsx}',
+      'mock-server/src/**/*.test.ts',
+      'scripts/**/*.test.mjs',
+      'next.config.test.ts',
+    ],
     clearMocks: true,
     restoreMocks: true,
     coverage: {

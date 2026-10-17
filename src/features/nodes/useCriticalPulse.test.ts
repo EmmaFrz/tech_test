@@ -1,9 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { NodeStatus } from '@shared/protocol';
+import { CRITICAL_PULSE_MS } from '@/domain/criticalEntries';
 
-import { PULSE_DURATION_MS, useCriticalPulse } from './useCriticalPulse';
+import { useCriticalPulse } from './useCriticalPulse';
 
 describe('useCriticalPulse', () => {
   beforeEach(() => {
@@ -14,32 +14,26 @@ describe('useCriticalPulse', () => {
     vi.useRealTimers();
   });
 
-  function renderStatus(initial: NodeStatus | undefined) {
-    return renderHook(({ status }) => useCriticalPulse(status), {
-      initialProps: { status: initial },
+  function renderEntry(initial: number | undefined) {
+    return renderHook(({ criticalSince }) => useCriticalPulse(criticalSince), {
+      initialProps: { criticalSince: initial },
     });
   }
 
-  it('does not pulse for a node that is already critical when it first appears', () => {
-    const { result } = renderStatus('CRITICAL');
+  it('does not pulse without a recent entry into CRITICAL', () => {
+    const { result } = renderEntry(undefined);
 
     expect(result.current).toBe(false);
   });
 
-  it('pulses when a node turns critical', () => {
-    const { result, rerender } = renderStatus('OK');
+  it('pulses for two seconds once the node enters CRITICAL', () => {
+    const { result, rerender } = renderEntry(undefined);
 
-    rerender({ status: 'CRITICAL' });
-
+    rerender({ criticalSince: 1_000 });
     expect(result.current).toBe(true);
-  });
-
-  it('stops pulsing after the pulse duration', () => {
-    const { result, rerender } = renderStatus('WARNING');
-    rerender({ status: 'CRITICAL' });
 
     act(() => {
-      vi.advanceTimersByTime(PULSE_DURATION_MS - 1);
+      vi.advanceTimersByTime(CRITICAL_PULSE_MS - 1);
     });
     expect(result.current).toBe(true);
 
@@ -49,34 +43,32 @@ describe('useCriticalPulse', () => {
     expect(result.current).toBe(false);
   });
 
-  it('does not pulse when a node recovers or moves between non-critical statuses', () => {
-    const { result, rerender } = renderStatus('CRITICAL');
-
-    rerender({ status: 'WARNING' });
-    expect(result.current).toBe(false);
-
-    rerender({ status: 'OK' });
-    expect(result.current).toBe(false);
-  });
-
-  it('pulses again when the node re-enters critical', () => {
-    const { result, rerender } = renderStatus('OK');
-    rerender({ status: 'CRITICAL' });
-    act(() => {
-      vi.advanceTimersByTime(PULSE_DURATION_MS);
-    });
-
-    rerender({ status: 'OK' });
-    rerender({ status: 'CRITICAL' });
+  it('pulses for a row that mounts while the entry is still recent', () => {
+    const { result } = renderEntry(1_000);
 
     expect(result.current).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(CRITICAL_PULSE_MS);
+    });
+    expect(result.current).toBe(false);
   });
 
-  it('does not pulse when the first status arrives after the node was unknown', () => {
-    const { result, rerender } = renderStatus(undefined);
+  it('stops pulsing as soon as the entry goes away', () => {
+    const { result, rerender } = renderEntry(1_000);
 
-    rerender({ status: 'CRITICAL' });
+    rerender({ criticalSince: undefined });
 
     expect(result.current).toBe(false);
+  });
+
+  it('pulses again for a new entry', () => {
+    const { result, rerender } = renderEntry(1_000);
+    act(() => {
+      vi.advanceTimersByTime(CRITICAL_PULSE_MS);
+    });
+
+    rerender({ criticalSince: 5_000 });
+
+    expect(result.current).toBe(true);
   });
 });

@@ -16,10 +16,10 @@ CMD ["npm", "run", "dev"]
 
 FROM dev AS test
 RUN npm run format:check && npm run lint && npm run typecheck
-CMD ["npm", "run", "test:ci"]
+CMD ["npm", "run", "test:coverage"]
 
 FROM test AS build
-RUN npm run test:ci && npm run build
+RUN npm run test:coverage && npm run build
 
 FROM node:22.23.3-alpine3.23 AS runtime
 WORKDIR /app
