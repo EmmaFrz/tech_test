@@ -43,7 +43,8 @@ and unit tests. Two services start:
 Stop everything with `docker-compose down`.
 
 With the legacy `docker-compose` v1 on Docker Engine 29+, also set `COMPOSE_API_VERSION=1.44` in
-your shell.
+your shell. The ports listen on `127.0.0.1` only; set `BIND_ADDRESS=0.0.0.0` to reach them from
+other machines.
 
 ### Configure the simulator
 

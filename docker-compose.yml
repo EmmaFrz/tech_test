@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: mock-server/Dockerfile
     ports:
-      - '127.0.0.1:4000:4000'
+      - '${BIND_ADDRESS:-127.0.0.1}:4000:4000'
     environment:
       PORT: '4000'
       NODE_COUNT: '${NODE_COUNT:-200}'
@@ -31,7 +31,7 @@ services:
       context: .
       target: runtime
     ports:
-      - '127.0.0.1:3000:3000'
+      - '${BIND_ADDRESS:-127.0.0.1}:3000:3000'
     depends_on:
       mock-server:
         condition: service_healthy
@@ -48,7 +48,7 @@ services:
       context: .
       target: dev
     ports:
-      - '127.0.0.1:5173:5173'
+      - '${BIND_ADDRESS:-127.0.0.1}:5173:5173'
     environment:
       WS_PROXY_TARGET: http://mock-server:4000
     volumes:
