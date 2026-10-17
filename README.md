@@ -187,8 +187,9 @@ Set `CYPRESS_baseUrl` to run Cypress against another URL.
   store at most once per animation frame.
 - **Fine-grained rendering.** Each grid row subscribes only to its own node, so an update re-renders
   that row and the aggregates, never the whole grid.
-- **Responsive input.** Search writes a deferred value to the store; row order refreshes at most
-  once per second while values stay live.
+- **Responsive input.** Search writes a deferred value to the store, and the grid follows filter,
+  sort and search changes in a deferred pass; row order refreshes at most once per second while
+  values stay live.
 - **Virtualized grid** to stay interactive with thousands of nodes.
 
 Design decisions, trade-offs, measurements and the plan for scaling to 10,000+ streaming nodes are

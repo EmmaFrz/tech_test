@@ -107,9 +107,11 @@ Decisions worth knowing:
   next animation frame, so a reorder always shares the commit of that frame's telemetry.
 - **Responsive input.** `useSyncExternalStore` updates are always synchronous, so wrapping store
   writes in `startTransition` would have no effect. The search box echoes keystrokes at once while
-  the store receives a deferred value. The grid reads the visible list directly: it mounts only its
-  window, so a new list costs about as much as a value flush, and deferring it would split every
-  reorder into a second commit.
+  the store receives a deferred value. A filter, sort or search change also keeps the list it
+  replaces and bumps a revision: the grid renders the old list until a `useDeferredValue` pass on
+  that revision renders the new one, so the control responds in the first frame. Telemetry reorders
+  leave the revision alone and render in the commit of their flush, because deferring them would
+  split every reorder into a second commit.
 - **Pause.** While paused, `applyBatch` merges updates into a non-reactive buffer and only refreshes
   `lastMessageAt`, so the connection indicator stays honest. `resume` applies the newest state per
   node in one update. A snapshot (reconnect) always applies immediately and discards the buffer,
@@ -148,8 +150,10 @@ delay the check.
 
 ## Rendering
 
-- **Virtualization.** `@tanstack/react-virtual` mounts only the visible rows plus an overscan.
-  Row height comes from the design tokens (rows are measured), not from a constant in code.
+- **Virtualization.** `@tanstack/react-virtual` mounts only the visible rows plus four rows past
+  each edge. Row height comes from the design tokens, not from a constant in code: a ResizeObserver
+  reports it, and a newly mounted row takes the last reported height, because measuring each new
+  row would force a layout during the commit.
 - **Critical escalation.** Critical rows get a red accent and tinted background; a node that
   _enters_ `CRITICAL` pulses for two seconds (disabled under `prefers-reduced-motion`), including
   when its row only appears because a filter now lists it; the Critical Alerts card switches to an
@@ -204,12 +208,21 @@ At 5,000 nodes the server emits 1,500 node updates per tick, 15,000 per second. 
 frames are not vsync-limited, so read the intervals as relative responsiveness rather than a 60 Hz
 budget; the point is that moving from 200 to 5,000 nodes does not produce long tasks.
 
-Those numbers predate the change that stopped deferring the grid's node list. A paired comparison
-afterwards (both builds behind nginx on the same 5,000-node stream, headless Electron, medians of
-four alternating runs with nine interactions each) measured the time until the grid shows the
-result: 36 ms against 46 ms before for a filter click, and 38 ms against 39 ms for a sort change.
-The first paint after a sort change now comes about 8 ms later (33 ms against 25 ms), because it
-already contains the reordered grid instead of only the toolbar.
+Those numbers predate the rendering changes made after the code review: a reorder shares the commit
+of its flush, the sort compares precomputed ID ranks instead of collating IDs on every tie, new rows
+take the observed row height instead of being measured, the overscan dropped from eight rows per
+edge to four, and the grid follows a filter, sort or search change in a deferred pass. A paired
+comparison against the submitted build (both behind nginx on the same 5,000-node stream, headless
+Electron, alternating runs, medians of the per-run medians):
+
+| Interaction                        | First paint          | Grid shows the result |
+| ---------------------------------- | -------------------- | --------------------- |
+| Filter click (5 runs of 9 clicks)  | 19 ms (26 ms before) | 34 ms (39 ms before)  |
+| Sort change (6 runs of 21 changes) | 18 ms (27 ms before) | 34 ms (42 ms before)  |
+
+In the five-run comparison, its nine sort changes per run showed the new order 3 ms later than
+before (37 ms against 34 ms), which is within the spread between runs, while their first paint still
+came earlier (24 ms against 26 ms).
 
 ## Testing
 
